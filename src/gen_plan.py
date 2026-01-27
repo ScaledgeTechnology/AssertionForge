@@ -16,6 +16,7 @@ from utils_gen_plan import (
     analyze_coverage_of_proven_svas,
     count_tokens_in_file,
     find_original_tcl_file,
+    resolve_pdf_inputs
 )
 from design_context_summarizer import DesignContextSummarizer
 import os, math
@@ -59,7 +60,8 @@ def gen_plan():
 
         timer.start_timing()
         print("Step 1: Reading the PDF file(s)...")
-        file_path = FLAGS.file_path
+        file_path = resolve_pdf_inputs(FLAGS.file_path)
+        
         spec_text, pdf_stats = read_pdf(file_path)
         timer.time_and_clear("Read PDF")
 
