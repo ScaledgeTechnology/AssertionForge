@@ -123,7 +123,7 @@ def gen_plan():
 
             # Generate the global summary once
             context_summarizer.generate_global_summary(
-                spec_text, rtl_text, list(valid_signals)
+                spec_text, rtl_text, list(valid_signals), timer
             )
 
             # Pre-generate summaries for all signals we'll process
@@ -132,13 +132,16 @@ def gen_plan():
             if not math.isinf(FLAGS.max_num_signals_process):
                 signals_to_process = signals_to_process[: FLAGS.max_num_signals_process]
 
-            for signal_name in signals_to_process:
+            timer = context_summarizer.timer 
+
+            for i,signal_name in enumerate(signals_to_process):
                 # Get signal-specific RTL if available
                 signal_rtl = (
                     rtl_knowledge.get(signal_name, "")
                     if isinstance(rtl_knowledge, dict)
                     else ""
                 )
+                print(f'{i+1}/{len(signals_to_process)}',end='')
                 context_summarizer.get_signal_specific_summary(
                     signal_name, spec_text, signal_rtl
                 )
