@@ -1511,72 +1511,70 @@ def extract_signals_from_rtl(design_dir: str) -> Tuple[str, Set[str], str]:
 
     return module_interface, valid_signals, chosen_top, signal_hierarchy
 
-def _extract_top_rtl_ports_pyslang(rtl_files) -> Tuple[str, Set[str], str]:
+def _extract_top_rtl_ports_pyslang(design_dir) -> Tuple[str, Set[str], str]:
     """
     Parse SystemVerilog RTL files using pyslang to extract the top module and its ports.
 
     Args:
-        rtl_files (List[str]): List of SystemVerilog RTL file paths.
+        design_dir (str): Path to the directory containing RTL files.
 
     Returns:
         Tuple[str, Set[str], str]: The reconstructed module interface string,
                                    a set of valid signal names, and the detected top module name.
     """
-    compilation = pyslang.Compilation()
+    # 1. Match the old glob pattern (including headers)
+    rtl_files = []
+    for ext in ["*.v", "*.sv", "*.vh", "*.svh"]:
+        rtl_files.extend(glob.glob(os.path.join(design_dir, ext)))
+    
+    if not rtl_files:
+        raise FileNotFoundError(f"No RTL files found in {design_dir}")
 
+    compilation = pyslang.Compilation()
     for f in rtl_files:
+        # Using fromFile captures the syntax tree for each
         compilation.addSyntaxTree(pyslang.SyntaxTree.fromFile(f))
 
-    compilation.compile()
-
-    modules = {}
-    instantiated = set()
-
-    for sym in compilation.getAllSymbols():
-        if isinstance(sym, pyslang.ModuleSymbol):
-            # Ignore testbench-like modules
-            if re.search(r"(tb|test|bench)$", sym.name, re.IGNORECASE):
-                continue
-            modules[sym.name] = sym
-
-            for member in sym.body.members:
-                if isinstance(member, pyslang.InstanceSymbol):
-                    instantiated.add(member.definition.name)
-
-    if not modules:
-        raise RuntimeError("No synthesizable modules found")
-
-    # 1️ Attribute-based top detection
-    for name, mod in modules.items():
-        if mod.attributes and any(a.name == "top" for a in mod.attributes):
-            chosen_top = name
+    top_instances = compilation.getRoot().topInstances
+    if not top_instances:
+        diag = compilation.getAllDiagnostics()
+        raise RuntimeError(f"No module definitions found in RTL. \n{diag}")
+    
+    # IMPROVEMENT: Try to find a module name that looks like the directory name, 
+    # otherwise take the first one. This avoids grabbing 'tb_top' by accident.
+    chosen_top = top_instances[0]
+    dir_name = os.path.basename(os.path.normpath(design_dir))
+    for inst in top_instances:
+        if inst.definition.name.lower() in dir_name.lower():
+            chosen_top = inst
             break
-    else:
-        # 2️ Not-instantiated heuristic
-        candidates = set(modules) - instantiated
-        chosen_top = sorted(candidates)[0] if candidates else sorted(modules)[0]
-
-    top = modules[chosen_top]
-
+            
+    top_module_name = chosen_top.definition.name
+    
     port_names = []
-    port_decls = []
+    port_decl_lines = []
+    valid_signals = set()
 
-    for port in top.ports:
-        name = port.name
+    for port in chosen_top.body.portList:
+        p_name = port.name
         direction = port.direction.name.lower()
+        
+        # Resolve type and handle errors
+        p_type_obj = port.type
+        if p_type_obj.isError:
+             p_type = "logic" # Fallback to standard logic if type is missing
+        else:
+             p_type = str(p_type_obj)
+        
+        port_names.append(p_name)
+        valid_signals.add(p_name)
+        # Construct line: "input logic [7:0] my_signal"
+        port_decl_lines.append(f"    {direction} {p_type} {p_name}")
 
-        width = ""
-        if port.type.isPackedArray:
-            width = f"[{port.type.getBitWidth() - 1}:0]"
+    # Construct the ANSI-style interface
+    module_interface = f"module {top_module_name} (\n" + ",\n".join(port_decl_lines) + "\n);"
 
-        decl = f"{direction} logic {width} {name}".strip()
-        port_names.append(name)
-        port_decls.append(decl + ";")
-
-    module_interface = f"module {chosen_top}({', '.join(port_names)});"
-    valid_signals = set(port_names)
-
-    return module_interface, valid_signals, chosen_top
+    return module_interface, valid_signals, top_module_name
 
 def _extract_top_rtl_ports_old(design_dir: str) -> Tuple[str, Set[str], str]:
     """
