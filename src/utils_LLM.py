@@ -10,6 +10,7 @@
 from __future__ import annotations
 import os, time, json, re
 from typing import Any, Callable, Dict, Optional
+from dotenv import load_dotenv
 
 try:
     import tiktoken  # type: ignore
@@ -137,12 +138,13 @@ def _make_agent(*, provider: str, model: str, **kw) -> Dict[str, Any]:
         base_url = kw.get("base_url")
         headers = kw.get("headers") or kw.get("extra_headers") or {}
         api_key = kw.get("api_key")
-    
+
         if not api_key:
             # 1. Try to get the OpenRouter key first, then the OpenAI key as a fallback
             # getenv returns None if neither exists
+            load_dotenv()
             api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-            
+            print(f'api_key:{api_key}')
             # 2. If both returned None, raise your error
             if not api_key:
                 raise RuntimeError("No API key found: set OPENROUTER_API_KEY or OPENAI_API_KEY.")
