@@ -10,6 +10,8 @@ from utils import get_ts
 from config import FLAGS
 from saver import saver
 from typing import Tuple, List
+from pathlib import Path
+from typing import Iterable, List, Union
 import os
 import subprocess
 import re
@@ -17,6 +19,9 @@ import tiktoken, shutil
 
 print = saver.log_info
 
+
+PathLike = Union[str, Path]
+InputType = Union[PathLike, Iterable[PathLike]]
 
 def analyze_coverage_of_proven_svas(svas: List[str], jasper_reports: List[str]) -> str:
     """
@@ -478,3 +483,41 @@ def find_original_tcl_file(design_dir: str) -> str:
             if file.endswith('.tcl') and file.startswith('FPV_'):
                 return os.path.join(root, file)
     return None
+
+
+def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
+    """
+    Normalize input into a list of PDF file paths.
+
+    Accepts:
+    - Single file path
+    - Folder path (recursively or flat, your choice)
+    - List / iterable of file paths or folders
+    """
+    paths: List[Path] = []
+    extensions = ["*.pdf","*.docx","*.txt"]
+
+    if isinstance(input_path, (str, Path)):
+        input_path = [input_path]
+
+    for item in input_path:
+        p = Path(item).expanduser().resolve()
+
+        if not p.exists():
+            raise FileNotFoundError(f"Path does not exist: {p}")
+
+        if p.is_dir():
+            for ext in extensions:
+                paths.extend(list(p.glob(ext)))
+            paths = sorted(paths)
+        elif p.is_file():
+            if p.suffix.lower() not in extensions:
+                raise ValueError(f"Not a file belonging to {extensions}: {p}")
+            paths.append(p)
+        else:
+            raise ValueError(f"Unsupported path type: {p}")
+
+    if not paths:
+        raise ValueError(f"No files found of following extensions: {extensions}")
+
+    return paths
