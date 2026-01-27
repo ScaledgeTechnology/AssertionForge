@@ -126,7 +126,7 @@ def count_prompt_tokens(text: str, model_name: Optional[str] = None) -> int:
 # Provider builders
 # =========================
 
-def _make_agent(*, provider: str, model: str, default_to_openrouter: bool = False, **kw) -> Dict[str, Any]:
+def _make_agent(*, provider: str, model: str, **kw) -> Dict[str, Any]:
     agent: Dict[str, Any] = {
         "provider": provider,
         "model": model
@@ -137,19 +137,19 @@ def _make_agent(*, provider: str, model: str, default_to_openrouter: bool = Fals
         base_url = kw.get("base_url")
         headers = kw.get("headers") or kw.get("extra_headers") or {}
         api_key = kw.get("api_key")
-
-        if default_to_openrouter and not base_url:
-            base_url = "https://openrouter.ai/api/v1"
-            # Prefer explicit OpenRouter env var; fallback to OPENAI_API_KEY if user set that intentionally
-            api_key_env = api_key_env or ("OPENROUTER_API_KEY" if os.getenv("OPENROUTER_API_KEY") else "OPENAI_API_KEY")
-            # OK if missing; the OpenAI client will error clearly if no key is present
-
+    
+        if not api_key:
+            # 1. Try to get the OpenRouter key first, then the OpenAI key as a fallback
+            # getenv returns None if neither exists
+            api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+            
+            # 2. If both returned None, raise your error
+            if not api_key:
+                raise RuntimeError("No API key found: set OPENROUTER_API_KEY or OPENAI_API_KEY.")
+        
         if client is None:
             try:
-                from openai import OpenAI  # type: ignore
-                # key = os.getenv(api_key_env) if api_key_env else os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-                if not api_key:
-                    raise RuntimeError("No API key found: set OPENROUTER_API_KEY or OPENAI_API_KEY.")
+                from openai import OpenAI  
                 client = OpenAI(api_key=api_key, base_url=base_url, default_headers=headers or None)
             except Exception as e:
                 raise RuntimeError("OpenAI client not provided and auto-import failed.") from e
