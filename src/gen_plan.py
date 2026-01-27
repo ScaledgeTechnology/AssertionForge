@@ -1445,23 +1445,6 @@ def find_existing_sva(design_dir: str) -> Tuple[str, Set[str]]:
     valid_signals = extract_signal_names(content)
     return module_interface, valid_signals
 
-def extract_top_rtl_ports(design_dir: str):
-    sv_files, v_files = [], []
-
-    for f in os.listdir(design_dir):
-        if f.endswith((".sv", ".svh")):
-            sv_files.append(os.path.join(design_dir, f))
-        elif f.endswith((".v", ".vh")):
-            v_files.append(os.path.join(design_dir, f))
-
-    if sv_files:
-        return _extract_top_rtl_ports_pyslang(sv_files)
-
-    if v_files:
-        return _extract_top_rtl_ports_old(design_dir)
-
-    raise FileNotFoundError("No RTL files found")
-
 def extract_signals_from_rtl(design_dir: str) -> Tuple[str, Set[str], str]:
     """
     New wrapper that keeps original behavior and adds internal/hierarchical extraction
@@ -1510,6 +1493,23 @@ def extract_signals_from_rtl(design_dir: str) -> Tuple[str, Set[str], str]:
     valid_signals = filter_signal_set(valid_signals)
 
     return module_interface, valid_signals, chosen_top, signal_hierarchy
+
+def extract_top_rtl_ports(design_dir: str):
+    sv_files, v_files = [], []
+
+    for f in os.listdir(design_dir):
+        if f.endswith((".sv", ".svh")):
+            sv_files.append(os.path.join(design_dir, f))
+        elif f.endswith((".v", ".vh")):
+            v_files.append(os.path.join(design_dir, f))
+
+    if sv_files:
+        return _extract_top_rtl_ports_pyslang(design_dir)
+
+    if v_files:
+        return _extract_top_rtl_ports_old(design_dir)
+
+    raise FileNotFoundError("No RTL files found")
 
 def _extract_top_rtl_ports_pyslang(design_dir) -> Tuple[str, Set[str], str]:
     """
