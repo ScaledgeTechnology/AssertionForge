@@ -11,6 +11,7 @@ from utils_LLM import llm_inference
 import time
 import re
 from saver import saver
+from utils import OurTimer
 
 # Use saver's logging mechanism
 print = saver.log_info
@@ -35,7 +36,7 @@ class DesignContextSummarizer:
         self.all_signals_summary = None  # Cache for comprehensive signals summary
 
     def generate_global_summary(
-        self, spec_text: str, rtl_text: str, valid_signals: List[str]
+        self, spec_text: str, rtl_text: str, valid_signals: List[str], timer
     ) -> Dict[str, Any]:
         """
         Generate a comprehensive global summary of the design, including spec and RTL.
@@ -53,22 +54,32 @@ class DesignContextSummarizer:
         if self.global_summary is not None:
             return self.global_summary
 
-        print("Generating global design summary...")
+        print("Generating global design summary using spec...")
 
         # Generate design specification summary
         design_summary = self._generate_design_specification_summary(spec_text)
+        timer.time_and_clear("Generate spec summary")
+
+        print("Generating global design summary using RTL...")
 
         # Generate RTL architecture summary
         rtl_summary = self._generate_rtl_architecture_summary(rtl_text)
+        timer.time_and_clear("Generate rtl summary")
+
+        print("Generating comprehensive all signals summary using Spec, RTL and given Signals...")
 
         # Generate comprehensive signals summary for all valid signals
         signals_summary = self._generate_comprehensive_signals_summary(
             spec_text, rtl_text, valid_signals
         )
         self.all_signals_summary = signals_summary
+        timer.time_and_clear("All signals summary")
+
+        print("Generating design pattern summary using Spec and RTL...")
 
         # Generate design patterns summary
         patterns_summary = self._generate_design_patterns_summary(spec_text, rtl_text)
+        timer.time_and_clear("Design pattern summary")
 
         # Cache the result
         self.global_summary = {
@@ -80,6 +91,8 @@ class DesignContextSummarizer:
         }
 
         print("Global design summary generated successfully")
+        self.timer = timer
+
         return self.global_summary
 
 
