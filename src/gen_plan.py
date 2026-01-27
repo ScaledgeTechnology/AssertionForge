@@ -10,6 +10,7 @@ from sva_extraction import extract_svas_from_block
 from doc_KG_processor import create_context_generators
 from dynamic_prompt_builder import DynamicPromptBuilder
 from load_result import load_svas, load_nl_plans, load_jasper_reports, load_pdf_stats
+from rtl_kg import extract_rtl_knowledge
 from rtl_parsing import refine_kg_from_rtl
 from utils_gen_plan import (
     extract_proof_status,
@@ -80,6 +81,8 @@ def gen_plan():
                 # Update the JSON representation after refinement
                 kg_json = convert_nx_to_json(kg_nx)
                 timer.time_and_clear("Refine KG with RTL")
+            
+            
 
         print("Step 3: Initializing the language model...")
         llm_agent = get_llm(model_name=FLAGS.llm_model, **FLAGS.llm_args)
