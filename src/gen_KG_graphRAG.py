@@ -20,6 +20,7 @@ from doxtract.processor import preprocess
 from utils import OurTimer, get_ts
 from saver import saver
 from config import FLAGS
+from utils import resolve_pdf_inputs
 import tiktoken
 
 print = saver.log_info
@@ -34,7 +35,7 @@ logging.basicConfig(
 def build_KG():
     timer = OurTimer()
     try:
-        input_file_path = FLAGS.input_file_path
+        input_file_path = resolve_pdf_inputs(FLAGS.file_path)
 
         base_dir = get_base_dir(input_file_path)
         print(f"Derived base directory: {base_dir}")
