@@ -106,6 +106,4 @@ designs:
       - "/content/AssertLLM/spec/uart.pdf"
     design_dir: "/content/AssertLLM/rtl/uart"
     KG_path: "/content/AssertLLM/spec/graph_rag_uart/output/graph.graphml"
-    input_file_path: 
-      - "/content/AssertLLM/spec/uart.pdf"
 
