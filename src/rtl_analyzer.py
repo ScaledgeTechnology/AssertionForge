@@ -58,6 +58,7 @@ class RTLAnalyzer:
                     content = f.read()
                     # Remove include directives to avoid duplicates
                     content = re.sub(r'`include\s+"[^"]+"\s*', '', content)
+                    content = _strip_verilog_comments(content)
                     combined_content += f"\n// File: {os.path.basename(file_path)}\n"
                     combined_content += content
             except Exception as e:
@@ -349,6 +350,23 @@ class RTLAnalyzer:
 
         except Exception as e:
             print(f"Error processing {file_path}: {str(e)}")
+
+    def _strip_verilog_comments(text: str) -> str:
+        """Remove Verilog/SystemVerilog comments while preserving attributes (* ... *)."""
+        # 1. Remove block comments /* ... */ (but not attributes)
+        text = re.sub(
+            r'/\*(?!\s*\*)[\s\S]*?\*/',
+            '',
+            text
+        )
+        # 2. Remove single-line // comments
+        text = re.sub(
+            r'//.*?$',
+            '',
+            text,
+            flags=re.MULTILINE
+        )
+        return text
 
     def _preprocess_includes(self, content, file_path):
         """Preprocess include directives by inlining the included files"""
