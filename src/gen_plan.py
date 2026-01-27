@@ -27,7 +27,7 @@ from utils_LLM import get_llm, llm_inference
 from pyverilog.vparser.parser import parse
 from pyverilog.vparser.ast import ModuleDef, Decl, Wire, Reg, InstanceList, Instance, Identifier, Ioport, Input, Output, Inout
 
-
+import pyslang
 import networkx as nx
 from typing import Tuple, List, Dict, Optional, Set, Union
 from PyPDF2 import PdfReader
@@ -38,6 +38,7 @@ import glob
 import pandas as pd
 from tabulate import tabulate
 from pathlib import Path
+from typing import Tuple, Set
 from tqdm import tqdm
 
 print = saver.log_info
@@ -1438,6 +1439,23 @@ def find_existing_sva(design_dir: str) -> Tuple[str, Set[str]]:
     valid_signals = extract_signal_names(content)
     return module_interface, valid_signals
 
+def extract_top_rtl_ports(design_dir: str):
+    sv_files, v_files = [], []
+
+    for f in os.listdir(design_dir):
+        if f.endswith((".sv", ".svh")):
+            sv_files.append(os.path.join(design_dir, f))
+        elif f.endswith((".v", ".vh")):
+            v_files.append(os.path.join(design_dir, f))
+
+    if sv_files:
+        return _extract_top_rtl_ports_pyslang(sv_files)
+
+    if v_files:
+        return _extract_top_rtl_ports_old(design_dir)
+
+    raise FileNotFoundError("No RTL files found")
+
 def extract_signals_from_rtl(design_dir: str) -> Tuple[str, Set[str], str]:
     """
     New wrapper that keeps original behavior and adds internal/hierarchical extraction
@@ -1445,7 +1463,7 @@ def extract_signals_from_rtl(design_dir: str) -> Tuple[str, Set[str], str]:
     """
 
     # Use your accurate old parser
-    module_interface, top_ports, chosen_top = _extract_top_rtl_ports_old(design_dir)
+    module_interface, top_ports, chosen_top = extract_top_rtl_ports(design_dir)
 
     # EXACT old behavior unless flag is enabled
     if not FLAGS.include_internal_signals:
@@ -1486,6 +1504,73 @@ def extract_signals_from_rtl(design_dir: str) -> Tuple[str, Set[str], str]:
     valid_signals = filter_signal_set(valid_signals)
 
     return module_interface, valid_signals, chosen_top, signal_hierarchy
+
+def _extract_top_rtl_ports_pyslang(rtl_files) -> Tuple[str, Set[str], str]:
+    """
+    Parse SystemVerilog RTL files using pyslang to extract the top module and its ports.
+
+    Args:
+        rtl_files (List[str]): List of SystemVerilog RTL file paths.
+
+    Returns:
+        Tuple[str, Set[str], str]: The reconstructed module interface string,
+                                   a set of valid signal names, and the detected top module name.
+    """
+    compilation = pyslang.Compilation()
+
+    for f in rtl_files:
+        compilation.addSyntaxTree(pyslang.SyntaxTree.fromFile(f))
+
+    compilation.compile()
+
+    modules = {}
+    instantiated = set()
+
+    for sym in compilation.getAllSymbols():
+        if isinstance(sym, pyslang.ModuleSymbol):
+            # Ignore testbench-like modules
+            if re.search(r"(tb|test|bench)$", sym.name, re.IGNORECASE):
+                continue
+            modules[sym.name] = sym
+
+            for member in sym.body.members:
+                if isinstance(member, pyslang.InstanceSymbol):
+                    instantiated.add(member.definition.name)
+
+    if not modules:
+        raise RuntimeError("No synthesizable modules found")
+
+    # 1️ Attribute-based top detection
+    for name, mod in modules.items():
+        if mod.attributes and any(a.name == "top" for a in mod.attributes):
+            chosen_top = name
+            break
+    else:
+        # 2️ Not-instantiated heuristic
+        candidates = set(modules) - instantiated
+        chosen_top = sorted(candidates)[0] if candidates else sorted(modules)[0]
+
+    top = modules[chosen_top]
+
+    port_names = []
+    port_decls = []
+
+    for port in top.ports:
+        name = port.name
+        direction = port.direction.name.lower()
+
+        width = ""
+        if port.type.isPackedArray:
+            width = f"[{port.type.getBitWidth() - 1}:0]"
+
+        decl = f"{direction} logic {width} {name}".strip()
+        port_names.append(name)
+        port_decls.append(decl + ";")
+
+    module_interface = f"module {chosen_top}({', '.join(port_names)});"
+    valid_signals = set(port_names)
+
+    return module_interface, valid_signals, chosen_top
 
 def _extract_top_rtl_ports_old(design_dir: str) -> Tuple[str, Set[str], str]:
     """
