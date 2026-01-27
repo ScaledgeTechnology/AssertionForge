@@ -37,6 +37,7 @@ import matplotlib
 from pathlib import Path
 import math
 from copy import deepcopy
+from typing import Iterable, List, Union
 
 matplotlib.use('pdf')
 
@@ -1397,3 +1398,43 @@ def print_list_of_numbers_with_perc(num_li, name, print_func):
 def format_loss_dict(loss_dict):
     return {k: f'{v:.4f}' for k, v in loss_dict.items()}
 
+
+PathLike = Union[str, Path]
+InputType = Union[PathLike, Iterable[PathLike]]
+
+def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
+    """
+    Normalize input into a list of PDF file paths.
+
+    Accepts:
+    - Single file path
+    - Folder path (recursively or flat, your choice)
+    - List / iterable of file paths or folders
+    """
+    paths: List[Path] = []
+    extensions = ["*.pdf","*.docx","*.txt"]
+
+    if isinstance(input_path, (str, Path)):
+        input_path = [input_path]
+
+    for item in input_path:
+        p = Path(item).expanduser().resolve()
+
+        if not p.exists():
+            raise FileNotFoundError(f"Path does not exist: {p}")
+
+        if p.is_dir():
+            for ext in extensions:
+                paths.extend(list(p.glob(ext)))
+            paths = sorted(paths)
+        elif p.is_file():
+            if p.suffix.lower() not in extensions:
+                raise ValueError(f"Not a file belonging to {extensions}: {p}")
+            paths.append(p)
+        else:
+            raise ValueError(f"Unsupported path type: {p}")
+
+    if not paths:
+        raise ValueError(f"No files found of following extensions: {extensions}")
+
+    return paths
