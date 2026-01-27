@@ -82,7 +82,8 @@ def gen_plan():
                 kg_json = convert_nx_to_json(kg_nx)
                 timer.time_and_clear("Refine KG with RTL")
             
-            
+            else:
+                rtl_knowledge = extract_rtl_knowledge(FLAGS.design_dir, output_dir=None, verbose=True)    
 
         print("Step 3: Initializing the language model...")
         llm_agent = get_llm(model_name=FLAGS.llm_model, **FLAGS.llm_args)
