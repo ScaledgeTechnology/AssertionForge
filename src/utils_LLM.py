@@ -144,7 +144,7 @@ def _make_agent(*, provider: str, model: str, **kw) -> Dict[str, Any]:
             # getenv returns None if neither exists
             load_dotenv()
             api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-            print(f'api_key:{api_key}')
+            
             # 2. If both returned None, raise your error
             if not api_key:
                 raise RuntimeError("No API key found: set OPENROUTER_API_KEY or OPENAI_API_KEY.")
