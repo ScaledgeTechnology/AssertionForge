@@ -140,7 +140,6 @@ class DesignPaths:
     file_path: Optional[Union[str, List[str]]] = None
     design_dir: Optional[str] = None
     KG_path: Optional[str] = None
-    input_file_path: Optional[Union[str, List[str]]] = None
 
 # -------------------
 # Root config
@@ -207,6 +206,5 @@ class AppConfig:
         d["file_path"] = dp.file_path
         d["design_dir"] = dp.design_dir
         d["KG_path"] = dp.KG_path
-        d["input_file_path"] = dp.input_file_path
 
         return SimpleNamespace(**d)
