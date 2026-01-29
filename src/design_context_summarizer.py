@@ -74,7 +74,7 @@ class DesignContextSummarizer:
         return result
 
     def _has_cached_global_part(self, name: str) -> bool:
-    return False  # to be implemented later
+        return False  # to be implemented later
 
     def _load_cached_global_part(self, name: str):
         raise NotImplementedError
