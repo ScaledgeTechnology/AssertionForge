@@ -7,6 +7,7 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 from typing import Dict, List, Optional, Any
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from utils_LLM import llm_inference
 import time
 import re
@@ -34,7 +35,138 @@ class DesignContextSummarizer:
         self.summary_cache = {}  # Cache for summaries
         self.global_summary = None  # Cache for global design summary
         self.all_signals_summary = None  # Cache for comprehensive signals summary
+        
+    @staticmethod
+    def _worker_design_summary(spec_text, llm_agent):
+        print("[GLOBAL] Starting design specification summary")
+        summarizer = DesignContextSummarizer(llm_agent)
+        result = summarizer._generate_design_specification_summary(spec_text)
+        print("[GLOBAL] Finished design specification summary")
+        return result
+    
+    
+    @staticmethod
+    def _worker_rtl_summary(rtl_text, llm_agent):
+        print("[GLOBAL] Starting RTL architecture summary")
+        summarizer = DesignContextSummarizer(llm_agent)
+        result = summarizer._generate_rtl_architecture_summary(rtl_text)
+        print("[GLOBAL] Finished RTL architecture summary")
+        return result
+    
+    
+    @staticmethod
+    def _worker_signals_summary(spec_text, rtl_text, valid_signals, llm_agent):
+        print("[GLOBAL] Starting comprehensive signals summary")
+        summarizer = DesignContextSummarizer(llm_agent)
+        result = summarizer._generate_comprehensive_signals_summary(
+            spec_text, rtl_text, valid_signals
+        )
+        print("[GLOBAL] Finished comprehensive signals summary")
+        return result
+    
+    
+    @staticmethod
+    def _worker_patterns_summary(spec_text, rtl_text, llm_agent):
+        print("[GLOBAL] Starting design patterns summary")
+        summarizer = DesignContextSummarizer(llm_agent)
+        result = summarizer._generate_design_patterns_summary(spec_text, rtl_text)
+        print("[GLOBAL] Finished design patterns summary")
+        return result
 
+    def _has_cached_global_part(self, name: str) -> bool:
+    return False  # to be implemented later
+
+    def _load_cached_global_part(self, name: str):
+        raise NotImplementedError
+    
+    def _store_cached_global_part(self, name: str, value):
+        pass
+
+    def generate_parallel_global_summary(
+        self, spec_text: str, rtl_text: str, valid_signals: List[str], timer
+    ) -> Dict[str, Any]:
+        """
+        Generate a comprehensive global summary of the design, including spec and RTL.
+        This should be called once and the results cached for future use.
+
+        Args:
+            spec_text: The design specification text
+            rtl_text: The RTL code
+            valid_signals: List of valid signal names
+
+        Returns:
+            Dictionary with various summary components
+        """
+        if self.global_summary is not None:
+            return self.global_summary
+    
+        print("[GLOBAL] Preparing global summary tasks")
+    
+        tasks = {}
+        results = {}
+    
+        if self._has_cached_global_part("design_summary"):
+            results["design_summary"] = self._load_cached_global_part("design_summary")
+        else:
+            tasks["design_summary"] = (
+                self._worker_design_summary,
+                (spec_text, self.llm_agent),
+            )
+    
+        if self._has_cached_global_part("rtl_summary"):
+            results["rtl_summary"] = self._load_cached_global_part("rtl_summary")
+        else:
+            tasks["rtl_summary"] = (
+                self._worker_rtl_summary,
+                (rtl_text, self.llm_agent),
+            )
+    
+        if self._has_cached_global_part("signals_summary"):
+            results["signals_summary"] = self._load_cached_global_part("signals_summary")
+        else:
+            tasks["signals_summary"] = (
+                self._worker_signals_summary,
+                (spec_text, rtl_text, valid_signals, self.llm_agent),
+            )
+    
+        if self._has_cached_global_part("patterns_summary"):
+            results["patterns_summary"] = self._load_cached_global_part("patterns_summary")
+        else:
+            tasks["patterns_summary"] = (
+                self._worker_patterns_summary,
+                (spec_text, rtl_text, self.llm_agent),
+            )
+    
+        if tasks:
+            print(f"[GLOBAL] Spawning process pool for {len(tasks)} tasks")
+    
+            with ProcessPoolExecutor(max_workers=len(tasks)) as executor:
+                future_map = {
+                    executor.submit(fn, *args): name
+                    for name, (fn, args) in tasks.items()
+                }
+    
+                for future in as_completed(future_map):
+                    name = future_map[future]
+                    value = future.result()
+                    results[name] = value
+                    self._store_cached_global_part(name, value)
+    
+        self.all_signals_summary = results.get("signals_summary")
+    
+        self.global_summary = {
+            "design_summary": results["design_summary"],
+            "rtl_summary": results["rtl_summary"],
+            "signals_summary": results["signals_summary"],
+            "patterns_summary": results["patterns_summary"],
+            "generation_time": time.time(),
+        }
+    
+        print("[GLOBAL] Global design summary generated successfully")
+        timer.time_and_clear("Global summary (parallel)")
+    
+        return self.global_summary
+    
     def generate_global_summary(
         self, spec_text: str, rtl_text: str, valid_signals: List[str], timer
     ) -> Dict[str, Any]:
