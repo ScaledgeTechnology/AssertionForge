@@ -85,6 +85,8 @@ def gen_plan():
             
             else:
                 rtl_knowledge = extract_rtl_knowledge(FLAGS.design_dir, output_dir=None, verbose=True)    
+        else:
+            rtl_knowledge = extract_rtl_knowledge(FLAGS.design_dir, output_dir=None, verbose=True)    
 
         print("Step 3: Initializing the language model...")
         llm_agent = get_llm(model_name=FLAGS.llm_model, **FLAGS.llm_args)
@@ -123,13 +125,10 @@ def gen_plan():
             )
 
             # Generate the global summary once
-            # context_summarizer.generate_global_summary(
-            #     spec_text, rtl_text, list(valid_signals), timer
-            # )
-            context_summarizer.generate_parallel_global_summary(
+            context_summarizer.generate_global_summary(
                 spec_text, rtl_text, list(valid_signals), timer
             )
-            
+
             # Pre-generate summaries for all signals we'll process
             signals_to_process = sorted(valid_signals)
 
@@ -152,25 +151,26 @@ def gen_plan():
 
             timer.time_and_clear("Initialize Context Summarizer")
 
-        print("Step 5: Generating natural language test plans...")
-        nl_plans = generate_nl_plans(
-            spec_text,
-            kg_json,
-            llm_agent,
-            valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
-            rtl_knowledge,
-            context_summarizer,  # Pass the context_summarizer
-        )
-        with open(Path(saver.logdir) / 'nl_plans.txt', 'w') as f:
-            c = 1
-            for signal_name, plans in nl_plans.items():
-                f.write(f'Signal {signal_name}:\n')
-                for plan in plans:
-                    f.write(f'Plan {c}: {plan}\n')
-                    c += 1
-                f.write('\n')
-        
-        timer.time_and_clear("Generate NL plans")
+        if FLAGS.generate_nlpans:
+            print("Step 5: Generating natural language test plans...")
+            nl_plans = generate_nl_plans(
+                spec_text,
+                kg_json,
+                llm_agent,
+                valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
+                rtl_knowledge,
+                context_summarizer,  # Pass the context_summarizer
+            )
+            with open(Path(saver.logdir) / 'nl_plans.txt', 'w') as f:
+                c = 1
+                for signal_name, plans in nl_plans.items():
+                    f.write(f'Signal {signal_name}:\n')
+                    for plan in plans:
+                        f.write(f'Plan {c}: {plan}\n')
+                        c += 1
+                    f.write('\n')
+            
+            timer.time_and_clear("Generate NL plans")
 
         if FLAGS.generate_SVAs:
 
@@ -274,6 +274,7 @@ def read_pdf(file_path: Union[str, List[str]]) -> Tuple[str, dict]:
     total_pages = 0
     total_tokens = 0
     total_file_size = 0
+
     output = preprocess(
         file_paths,
         markdown=True,
