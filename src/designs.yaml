@@ -29,8 +29,9 @@ gen_plan:
   sva_file_path: null
   sva_out_dir: "/content/svas"
   gen_plan_sva_using_valid_signals: true
-  valid_signals: []
+  valid_signals: ['baud_clk','baud_freq']
   generate_SVAs: true
+  generate_nlpans: true
   load_dir: null
 
   dynamic_prompt_settings:
@@ -45,7 +46,7 @@ gen_plan:
     path_based:
       enabled: true
       max_depth: 5                    # Maximum path length to explore in graph traversal
-      representation_style: "standard" # Options: 'concise', 'standard', 'detailed', 'verification_focused'
+      representation_style: "verification_focused" # Options: 'concise', 'standard', 'detailed', 'verification_focused'
     
     motif:
       enabled: false
@@ -105,5 +106,5 @@ designs:
     file_path: 
       - "/content/AssertLLM/spec/uart.pdf"
     design_dir: "/content/AssertLLM/rtl/uart"
-    KG_path: "/content/AssertLLM/spec/graph_rag_uart/output/graph.graphml"
+    KG_path: "/content/newest_uart_graph.graphml"
 
