@@ -213,7 +213,7 @@ class Saver(object):
     #         build_str += '{}\n'.format(s)
     #         return build_str
 
-    def log_info(self, s, silent=False, build_str=None):
+    def log_info(self, s, silent=False, build_str=None, end='\n'):
         # Pretty-printing logic
         if isinstance(s, (list, dict)):
             s = json.dumps(s, indent=4)
@@ -221,7 +221,7 @@ class Saver(object):
             s = json.dumps(s.chat_history, indent=4)
 
         if not silent:
-            print(s)
+            print(s,end=end)
         if not hasattr(self, 'log_f'):
             self.log_f = self._open(f'log{self.pidstr}.txt')
         try:
