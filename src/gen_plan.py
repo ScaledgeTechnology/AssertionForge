@@ -33,6 +33,7 @@ import pyslang
 import networkx as nx
 from typing import Tuple, List, Dict, Optional, Set, Union
 from PyPDF2 import PdfReader
+from doxtract.processor import preprocess
 import json
 import random
 import re
@@ -122,10 +123,13 @@ def gen_plan():
             )
 
             # Generate the global summary once
-            context_summarizer.generate_global_summary(
+            # context_summarizer.generate_global_summary(
+            #     spec_text, rtl_text, list(valid_signals), timer
+            # )
+            context_summarizer.generate_parallel_global_summary(
                 spec_text, rtl_text, list(valid_signals), timer
             )
-
+            
             # Pre-generate summaries for all signals we'll process
             signals_to_process = sorted(valid_signals)
 
@@ -270,15 +274,24 @@ def read_pdf(file_path: Union[str, List[str]]) -> Tuple[str, dict]:
     total_pages = 0
     total_tokens = 0
     total_file_size = 0
-
+    output = preprocess(
+        file_paths,
+        markdown=True,
+        extract_vectors=False,
+        extract_images=False,
+        strip_headers_footers=True,
+        preserve_layout=True,
+        as_dataset=False,
+        verbose=False,
+    )
     for path in file_paths:
-        pdf_reader = PdfReader(path)
+        pdf_reader = output[os.path.basename(path)]
         text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+        for page in pdf_reader:
+            text += page['page_content']
 
         all_text += text + "\n\n"  # Add some separation between different PDFs
-        total_pages += len(pdf_reader.pages)
+        total_pages += len(output[os.path.basename(path)])
 
         # Create a temporary file to store the extracted text
         temp_file_path = f"temp_{os.path.basename(path)}.txt"
