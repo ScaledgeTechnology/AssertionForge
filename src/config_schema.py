@@ -116,6 +116,7 @@ class GenPlanStage:
     hierarichal_signal_depth: int = 3
     prune_signals: bool = True
     generate_SVAs: bool = False
+    generate_nlpans: bool = False
     load_dir: Optional[str] = None
     dynamic_prompt_settings: DynamicPromptSettings = field(default_factory=DynamicPromptSettings)
 
@@ -185,6 +186,7 @@ class AppConfig:
             "hierarichal_signal_depth": self.gen_plan.hierarichal_signal_depth,
             "prune_signals": self.gen_plan.prune_signals,
             "generate_SVAs": self.gen_plan.generate_SVAs,
+            "generate_nlpans": self.gen_plan.generate_nlpans,
             "load_dir": self.gen_plan.load_dir,
             # dynamic prompt internals → export as dict
             "dynamic_prompt_settings": asdict(self.gen_plan.dynamic_prompt_settings),
