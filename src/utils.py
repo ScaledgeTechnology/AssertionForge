@@ -1402,7 +1402,7 @@ def format_loss_dict(loss_dict):
 PathLike = Union[str, Path]
 InputType = Union[PathLike, Iterable[PathLike]]
 
-def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
+def resolve_pdf_inputs(input_path: InputType) -> List[str]:
     """
     Normalize input into a list of PDF file paths.
 
@@ -1411,8 +1411,8 @@ def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
     - Folder path (recursively or flat, your choice)
     - List / iterable of file paths or folders
     """
-    paths: List[Path] = []
-    extensions = ["*.pdf","*.docx","*.txt"]
+    paths: List[str] = []
+    extensions = [".pdf",".docx",".txt"]
 
     if isinstance(input_path, (str, Path)):
         input_path = [input_path]
@@ -1425,10 +1425,11 @@ def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
 
         if p.is_dir():
             for ext in extensions:
-                paths.extend(list(p.glob(ext)))
+                paths.extend(list(p.glob(f"*{ext}")))
             paths = sorted(paths)
         elif p.is_file():
             if p.suffix.lower() not in extensions:
+                print(p.suffix.lower())
                 raise ValueError(f"Not a file belonging to {extensions}: {p}")
             paths.append(p)
         else:
@@ -1437,4 +1438,5 @@ def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
     if not paths:
         raise ValueError(f"No files found of following extensions: {extensions}")
 
-    return paths
+    return sorted(str(p) for p in paths)
+
