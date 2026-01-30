@@ -15,7 +15,7 @@ def load_app_config(
     if not Path(designs_yaml).exists():
         raise FileNotFoundError(f"Config file {designs_yaml} not found")
 
-    data = yaml.safe_load(Path(designs_yaml).read_text()) or {}
+    data = yaml.safe_load(Path(designs_yaml).read_text(encoding="utf-8")) or {}
     # print(data.get("build_KG", {}))
     # Build AppConfig from YAML structure
     cfg = AppConfig(
@@ -61,6 +61,20 @@ def build_FLAGS_from_cli() -> Any:
     p.add_argument("--graphrag_method", help="GraphRAG method to use (optional, defaults to YAML)")
     p.add_argument("--query", help="Query string for KG use stage (required for use_KG)")
 
+    # pipeline resume / checkpointing
+    p.add_argument(
+        "--step",
+        type=int,
+        default=0,
+        help="Pipeline step to run (0 = full pipeline, 1..6 = resume from step)"
+    )
+
+    p.add_argument(
+        "--run_dir",
+        type=str,
+        default=None,
+        help="Fixed run directory to store logs and cached artifacts (enables resume)"
+    )
     args, _ = p.parse_known_args()
 
     # Load YAML config first
@@ -71,6 +85,11 @@ def build_FLAGS_from_cli() -> Any:
     cfg.design_name = args.design_name
     if args.valid_signals:
         cfg.gen_plan.valid_signals = args.valid_signals
+
+    # Apply pipeline resume / checkpointing overrides (gen_plan stage)
+    cfg.gen_plan.step = args.step
+    cfg.gen_plan.run_dir = args.run_dir
+
 
     # Handle use_KG stage
     if args.task == "use_KG":

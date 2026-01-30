@@ -88,7 +88,31 @@ embed_text:
 extract_graph:
   model_id: default_chat_model
   prompt: "prompts/extract_graph.txt"
-  entity_types: [organization,person,geo,event]
+  entity_types:
+  - DesignSpecification
+  - Section
+  - Subsection
+  - Table
+  - Figure
+  - Author
+  - Module
+  - Submodule
+  - Block
+  - Protocol
+  - Standard
+  - Component
+  - Signal
+  - Port
+  - Pin
+  - Register
+  - FIFO
+  - Clock
+  - Interrupt
+  - Operation
+  - Configuration
+  - Constraint
+  - Address
+  - Reference
   max_gleanings: 1
 
 summarize_descriptions:

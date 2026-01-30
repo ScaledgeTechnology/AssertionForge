@@ -459,7 +459,8 @@ def extract_proof_status(report_content: str) -> str:
 
 
 def count_tokens_in_file(file_path):
-    with open(file_path, 'r') as file:
+    # import pdb; pdb.set_trace()
+    with open(file_path, 'r', encoding='utf-8', errors='replace') as file:
         content = file.read()
 
     # Use the cl100k_base encoder, which is used for GPT-4 and ChatGPT

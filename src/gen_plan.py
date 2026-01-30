@@ -10,15 +10,14 @@ from sva_extraction import extract_svas_from_block
 from doc_KG_processor import create_context_generators
 from dynamic_prompt_builder import DynamicPromptBuilder
 from load_result import load_svas, load_nl_plans, load_jasper_reports, load_pdf_stats
-from rtl_kg import extract_rtl_knowledge
 from rtl_parsing import refine_kg_from_rtl
 from utils_gen_plan import (
     extract_proof_status,
     analyze_coverage_of_proven_svas,
     count_tokens_in_file,
     find_original_tcl_file,
-    resolve_pdf_inputs
 )
+from rtl_kg import extract_rtl_knowledge
 from design_context_summarizer import DesignContextSummarizer
 import os, math
 import subprocess
@@ -29,7 +28,7 @@ from utils_LLM import get_llm, llm_inference
 from pyverilog.vparser.parser import parse
 from pyverilog.vparser.ast import ModuleDef, Decl, Wire, Reg, InstanceList, Instance, Identifier, Ioport, Input, Output, Inout
 
-import pyslang
+
 import networkx as nx
 from typing import Tuple, List, Dict, Optional, Set, Union
 from PyPDF2 import PdfReader
@@ -41,7 +40,6 @@ import glob
 import pandas as pd
 from tabulate import tabulate
 from pathlib import Path
-from typing import Tuple, Set
 from tqdm import tqdm
 
 print = saver.log_info
@@ -54,6 +52,34 @@ def gen_plan():
     """
     timer = OurTimer()
 
+    from pathlib import Path
+    import json
+
+    objdir = Path(saver.get_obj_dir())
+    step = int(getattr(FLAGS, "step", 0))  # 0 = run all
+
+    def _save_json(path: Path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _load_json(path: Path, default=None):
+        if not path.exists():
+            if default is not None:
+                return default
+            raise FileNotFoundError(f"Missing cached artifact: {path}")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _save_text(path: Path, text: str):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _load_text(path: Path, default=None):
+        if not path.exists():
+            if default is not None:
+                return default
+            raise FileNotFoundError(f"Missing cached artifact: {path}")
+        return path.read_text(encoding="utf-8")
+
     # Initialize context_summarizer as None
     context_summarizer = None
 
@@ -61,54 +87,118 @@ def gen_plan():
         print("Starting the test plan generation process...")
 
         timer.start_timing()
+
+        # -----------------------------
+        # Step 1: Read PDF (or load cache)
+        # -----------------------------
         print("Step 1: Reading the PDF file(s)...")
-        file_path = resolve_pdf_inputs(FLAGS.file_path)
-        
-        spec_text, pdf_stats = read_pdf(file_path)
+        if step in (0, 1):
+            # Use repo helper if available (your earlier version had this)
+            try:
+                file_path = resolve_pdf_inputs(FLAGS.file_path)
+            except Exception:
+                file_path = FLAGS.file_path
+
+            spec_text, pdf_stats = read_pdf(file_path)
+
+            # Caching Step 1 output
+            _save_text(objdir / "step1_spec_text.txt", spec_text)
+            _save_json(objdir / "step1_pdf_stats.json", pdf_stats)
+        else:
+            spec_text = _load_text(objdir / "step1_spec_text.txt")
+            pdf_stats = _load_json(objdir / "step1_pdf_stats.json")
+
         timer.time_and_clear("Read PDF")
 
+        # -----------------------------
+        # Step 2: KG / RTL knowledge (or load cache)
+        # -----------------------------
         kg_nx, kg_json, rtl_knowledge = None, None, None
-        if FLAGS.use_KG:
-            print("Step 2: Loading and processing the Knowledge Graph...")
-            kg_nx, kg_json = load_and_process_kg(FLAGS.KG_path)
-            timer.time_and_clear("Load and process KG")
 
-            if FLAGS.refine_with_rtl:
-                print("Step 2b: Refining Knowledge Graph with RTL information...")
-                kg_nx, rtl_knowledge = refine_kg_from_rtl(kg_nx)
-                print(
-                    f"Refined Knowledge Graph now has {len(kg_nx.nodes())} nodes and {len(kg_nx.edges())} edges"
-                )
-                # Update the JSON representation after refinement
-                kg_json = convert_nx_to_json(kg_nx)
-                timer.time_and_clear("Refine KG with RTL")
-            
+        # NOTE: Step 2 depends on config flags; caching must respect them.
+        if step in (0, 2):
+            if FLAGS.use_KG:
+                print("Step 2: Loading and processing the Knowledge Graph...")
+                kg_nx, kg_json = load_and_process_kg(FLAGS.KG_path)
+                timer.time_and_clear("Load and process KG")
+
+                if FLAGS.refine_with_rtl:
+                    print("Step 2b: Refining Knowledge Graph with RTL information...")
+                    kg_nx, rtl_knowledge = refine_kg_from_rtl(kg_nx)
+                    print(
+                        f"Refined Knowledge Graph now has {len(kg_nx.nodes())} nodes and {len(kg_nx.edges())} edges"
+                    )
+                    # Update the JSON representation after refinement
+                    kg_json = convert_nx_to_json(kg_nx)
+                    timer.time_and_clear("Refine KG with RTL")
+                else:
+                    # Your earlier repository version had this; keep it to avoid rtl_knowledge staying None
+                    rtl_knowledge = extract_rtl_knowledge(
+                        FLAGS.design_dir, output_dir=None, verbose=True
+                    )
             else:
-                rtl_knowledge = extract_rtl_knowledge(FLAGS.design_dir, output_dir=None, verbose=True)    
+                # If no KG, you might still want RTL knowledge depending on downstream flags.
+                # Keep rtl_knowledge as None unless you want to always compute it.
+                rtl_knowledge = extract_rtl_knowledge(
+                        FLAGS.design_dir, output_dir=None, verbose=True
+                    )
 
+            # Caching Step 2 outputs
+            _save_json(objdir / "step2_kg.json", kg_json if kg_json is not None else {})
+            _save_json(
+                objdir / "step2_rtl_knowledge.json",
+                rtl_knowledge if rtl_knowledge is not None else {},
+            )
+        else:
+            kg_json = _load_json(objdir / "step2_kg.json", default={})
+            rtl_knowledge = _load_json(objdir / "step2_rtl_knowledge.json", default={})
+            # kg_nx isn't required for later steps; keep it None
+            kg_nx = None
+
+        # -----------------------------
+        # Step 3: LLM init (cannot "cache" model object, but we can skip earlier steps)
+        # -----------------------------
         print("Step 3: Initializing the language model...")
         llm_agent = get_llm(model_name=FLAGS.llm_model, **FLAGS.llm_args)
         timer.time_and_clear("Initialize LLM")
 
+        # -----------------------------
+        # Step 4: Extract valid signals (or load cache)
+        # -----------------------------
         print("Step 4: Extracting valid signal names...")
-        if not FLAGS.valid_signals:
-            _, valid_signals, signal_hierarchy = write_svas_to_file(
-                []
-            )  # We pass an empty list just to extract valid signals
-            if FLAGS.include_internal_signals:
-                total_signals = 0
-                for key, value in signal_hierarchy.items():
-                    total_signals += len(value)
-                print(f"Extracted signal names: {signal_hierarchy} \nTotal signals: {total_signals}")
-                print(f"Pruned and cleaned signals: {valid_signals} \nSelected signals: {len(valid_signals)}")
+        if step in (0, 4):
+            if not FLAGS.valid_signals:
+                _, valid_signals, signal_hierarchy = write_svas_to_file(
+                    []
+                )  # We pass an empty list just to extract valid signals
+                if FLAGS.include_internal_signals:
+                    total_signals = 0
+                    for key, value in signal_hierarchy.items():
+                        total_signals += len(value)
+                    print(
+                        f"Extracted signal names: {signal_hierarchy} \nTotal signals: {total_signals}"
+                    )
+                    print(
+                        f"Pruned and cleaned signals: {valid_signals} \nSelected signals: {len(valid_signals)}"
+                    )
+                else:
+                    print(f"Valid signal names: {', '.join(sorted(valid_signals))}")
             else:
+                valid_signals = FLAGS.valid_signals
                 print(f"Valid signal names: {', '.join(sorted(valid_signals))}")
+
+            # Caching Step 4 outputs
+            _save_json(objdir / "step4_valid_signals.json", sorted(list(valid_signals)))
         else:
-            valid_signals = FLAGS.valid_signals    
-            print(f"Valid signal names: {', '.join(sorted(valid_signals))}")
+            valid_signals = set(_load_json(objdir / "step4_valid_signals.json"))
+            print(f"Valid signal names (loaded): {', '.join(sorted(valid_signals))}")
+
         timer.time_and_clear("Extract valid signals")
 
-        # Initialize context enhancement if enabled - do this after we have valid_signals
+        # -----------------------------
+        # Step 4b: Context Summarizer (optional; expensive) - not fully cached here
+        # -----------------------------
+        # If you want this resumable too, you'd need to persist summaries per signal.
         if FLAGS.enable_context_enhancement:
             print("Step 4b: Initializing Design Context Summarizer...")
 
@@ -118,12 +208,14 @@ def gen_plan():
             # Extract RTL text from rtl_knowledge if available - simplified approach
             rtl_text = (
                 rtl_knowledge['combined_content']
-                if rtl_knowledge is not None and 'combined_content' in rtl_knowledge
+                if rtl_knowledge is not None
+                and isinstance(rtl_knowledge, dict)
+                and 'combined_content' in rtl_knowledge
                 else ""
             )
 
             # Generate the global summary once
-            context_summarizer.generate_global_summary(
+            context_summarizer.generate_parallel_global_summary(
                 spec_text, rtl_text, list(valid_signals), timer
             )
 
@@ -133,32 +225,46 @@ def gen_plan():
             if not math.isinf(FLAGS.max_num_signals_process):
                 signals_to_process = signals_to_process[: FLAGS.max_num_signals_process]
 
-            timer = context_summarizer.timer 
-
-            for i,signal_name in enumerate(signals_to_process):
+            for signal_name in signals_to_process:
                 # Get signal-specific RTL if available
                 signal_rtl = (
                     rtl_knowledge.get(signal_name, "")
                     if isinstance(rtl_knowledge, dict)
                     else ""
                 )
-                print(f'{i+1}/{len(signals_to_process)}',end='')
                 context_summarizer.get_signal_specific_summary(
                     signal_name, spec_text, signal_rtl
                 )
 
             timer.time_and_clear("Initialize Context Summarizer")
 
+        # -----------------------------
+        # Step 5: NL plans (or load cache)
+        # -----------------------------
         print("Step 5: Generating natural language test plans...")
-        nl_plans = generate_nl_plans(
-            spec_text,
-            kg_json,
-            llm_agent,
-            valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
-            rtl_knowledge,
-            context_summarizer,  # Pass the context_summarizer
-        )
-        with open(Path(saver.logdir) / 'nl_plans.txt', 'w') as f:
+        if step in (0, 5):
+            nl_plans = generate_nl_plans(
+                spec_text,
+                kg_json,
+                llm_agent,
+                valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
+                rtl_knowledge,
+                context_summarizer,  # Pass the context_summarizer
+            )
+
+            # Caching Step 5 output
+            _save_json(objdir / "step5_nl_plans.json", nl_plans)
+        else:
+            nl_plans = _load_json(objdir / "step5_nl_plans.json")
+            print("Loaded NL plans from cache.")
+
+        # Keep your existing nl_plans.txt write (do not remove)
+        with open(
+            Path(saver.logdir) / 'nl_plans.txt',
+            'w',
+            encoding="cp1252",
+            errors="replace",
+        ) as f:
             c = 1
             for signal_name, plans in nl_plans.items():
                 f.write(f'Signal {signal_name}:\n')
@@ -166,21 +272,31 @@ def gen_plan():
                     f.write(f'Plan {c}: {plan}\n')
                     c += 1
                 f.write('\n')
-        
+
         timer.time_and_clear("Generate NL plans")
 
+        # -----------------------------
+        # Step 6/7: SVAs (or load cache) + write to files
+        # -----------------------------
         if FLAGS.generate_SVAs:
-
             print("Step 6: Generating SVAs...")
-            svas = generate_svas(
-                spec_text,
-                nl_plans,
-                kg_json,
-                llm_agent,
-                valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
-                rtl_knowledge,
-                context_summarizer,  # Pass the context_summarizer
-            )
+            if step in (0, 6):
+                svas = generate_svas(
+                    spec_text,
+                    nl_plans,
+                    kg_json,
+                    llm_agent,
+                    valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
+                    rtl_knowledge,
+                    context_summarizer,  # Pass the context_summarizer
+                )
+
+                # Caching Step 6 output
+                _save_json(objdir / "step6_svas.json", svas)
+            else:
+                svas = _load_json(objdir / "step6_svas.json", default=[])
+                print("Loaded SVAs from cache.")
+
             if len(svas) == 0:
                 raise RuntimeError(f'No SVA generated/extracted')
             timer.time_and_clear("Generate SVAs")
@@ -192,17 +308,17 @@ def gen_plan():
             print('')  # Add a blank line for readability
 
             print("Step 7: Writing SVAs to files...")
-            sva_file_paths, _ = write_svas_to_file(svas)
+            sva_file_paths, _, _ = write_svas_to_file(svas)
             timer.time_and_clear("Write SVAs to files")
-            
-        if FLAGS.generate_SVAs: 
-          print('Test plan and Assertion generation process completed.') 
-          print(f"<[!]> nl test plans saved to {Path(saver.logdir)}/nl_plans.txt")
-          print(f"<[!]> svas saved to {sva_file_paths}")
+
+        if FLAGS.generate_SVAs:
+            print('Test plan and Assertion generation process completed.')
+            print(f"<[!]> nl test plans saved to {Path(saver.logdir)}/nl_plans.txt")
+            print(f"<[!]> svas saved to {sva_file_paths}")
         else:
-          print('Test plan generation process completed.')
-          print(f"<[!]> nl test plans saved to {Path(saver.logdir)}/nl_plans.txt")
-        
+            print('Test plan generation process completed.')
+            print(f"<[!]> nl test plans saved to {Path(saver.logdir)}/nl_plans.txt")
+
             # print("Step 8: Generating TCL scripts...")
             # tcl_file_paths = generate_tcl_scripts(sva_file_paths)
             # timer.time_and_clear("Generate TCL scripts")

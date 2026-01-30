@@ -150,4 +150,3 @@ Entity_types: {entity_types}
 Text: {input_text}
 ######################
 Output:
- 

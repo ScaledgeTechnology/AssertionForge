@@ -95,6 +95,8 @@ class DynamicPromptSettings:
 # -------------------
 @dataclass
 class GenPlanStage:
+    step: int = 0
+    run_dir: str | None = None
     subtask: str = "actual_gen"
     DEBUG: bool = False
     prompt_builder: str = "dynamic"

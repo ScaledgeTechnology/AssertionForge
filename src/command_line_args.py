@@ -41,6 +41,11 @@ def parse_command_line_args():
         config = __import__(config_name)
     else:
         import config
+
+
+    # Always support resume flags even if config.FLAGS doesn't expose them yet
+    parser.add_argument("--run_dir", type=str, default=None, help="Fixed run directory for logs/cache")
+    parser.add_argument("--step", type=str, default=None, help="Resume step (0..6)")
     
     # Add arguments dynamically based on FLAGS in config
     for key, value in config.FLAGS.__dict__.items():

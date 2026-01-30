@@ -56,13 +56,20 @@ class MyTimer:
 class Saver(object):
     def __init__(self):
 
-        self.logdir = join(
-            get_root_path(),
-            'logs',
-            # '{}_{}_{}_{}_{}_{}_{}'.format(FLAGS.norm_method, FLAGS.task, FLAGS.subtask, FLAGS.tag, FLAGS.target, model_str, get_ts()))
-            '{}_{}'.format(FLAGS.task, get_ts()),
-        )
+        # self.logdir = join(
+        #     get_root_path(),
+        #     'logs',
+        #     # '{}_{}_{}_{}_{}_{}_{}'.format(FLAGS.norm_method, FLAGS.task, FLAGS.subtask, FLAGS.tag, FLAGS.target, model_str, get_ts()))
+        #     '{}_{}'.format(FLAGS.task, get_ts()),
+        # )
 
+        # Added for cache
+        run_dir = getattr(FLAGS, "run_dir", None)
+        if run_dir:
+            self.logdir = run_dir
+        else:
+            self.logdir = join(get_root_path(), "logs", f"{FLAGS.task}_{get_ts()}")
+            
         self.accelerator = None
 
         self.pidstr = ''
