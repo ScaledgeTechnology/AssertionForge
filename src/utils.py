@@ -1412,7 +1412,7 @@ def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
     - List / iterable of file paths or folders
     """
     paths: List[Path] = []
-    extensions = ["*.pdf","*.docx","*.txt"]
+    extensions = [".pdf",".docx",".txt"]
 
     if isinstance(input_path, (str, Path)):
         input_path = [input_path]
@@ -1425,10 +1425,11 @@ def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
 
         if p.is_dir():
             for ext in extensions:
-                paths.extend(list(p.glob(ext)))
+                paths.extend(list(p.glob(f"*{ext}")))
             paths = sorted(paths)
         elif p.is_file():
             if p.suffix.lower() not in extensions:
+                print(p.suffix.lower())
                 raise ValueError(f"Not a file belonging to {extensions}: {p}")
             paths.append(p)
         else:
