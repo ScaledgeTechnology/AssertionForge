@@ -485,7 +485,7 @@ def find_original_tcl_file(design_dir: str) -> str:
     return None
 
 
-def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
+def resolve_pdf_inputs(input_path: InputType) -> List[str]:
     """
     Normalize input into a list of PDF file paths.
 
@@ -494,7 +494,7 @@ def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
     - Folder path (recursively or flat, your choice)
     - List / iterable of file paths or folders
     """
-    paths: List[Path] = []
+    paths: List[str] = []
     extensions = [".pdf",".docx",".txt"]
 
     if isinstance(input_path, (str, Path)):
@@ -521,4 +521,5 @@ def resolve_pdf_inputs(input_path: InputType) -> List[Path]:
     if not paths:
         raise ValueError(f"No files found of following extensions: {extensions}")
 
-    return paths
+    return sorted(str(p) for p in paths)
+
