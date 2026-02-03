@@ -16,19 +16,21 @@ from utils_gen_plan import (
     analyze_coverage_of_proven_svas,
     count_tokens_in_file,
     find_original_tcl_file,
+    resolve_pdf_inputs
 )
 from rtl_kg import extract_rtl_knowledge
 from design_context_summarizer import DesignContextSummarizer
 import os, math
 import subprocess
 from config import FLAGS
-from saver import saver
+from saver import saver, _save_text, _save_json, _load_text, _load_json
 from utils import OurTimer
 from utils_LLM import get_llm, llm_inference
 from pyverilog.vparser.parser import parse
 from pyverilog.vparser.ast import ModuleDef, Decl, Wire, Reg, InstanceList, Instance, Identifier, Ioport, Input, Output, Inout
 
 
+import pyslang
 import networkx as nx
 from typing import Tuple, List, Dict, Optional, Set, Union
 from PyPDF2 import PdfReader
@@ -57,28 +59,6 @@ def gen_plan():
 
     objdir = Path(saver.get_obj_dir())
     step = int(getattr(FLAGS, "step", 0))  # 0 = run all
-
-    def _save_json(path: Path, data):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-    def _load_json(path: Path, default=None):
-        if not path.exists():
-            if default is not None:
-                return default
-            raise FileNotFoundError(f"Missing cached artifact: {path}")
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def _save_text(path: Path, text: str):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    def _load_text(path: Path, default=None):
-        if not path.exists():
-            if default is not None:
-                return default
-            raise FileNotFoundError(f"Missing cached artifact: {path}")
-        return path.read_text(encoding="utf-8")
 
     # Initialize context_summarizer as None
     context_summarizer = None
@@ -242,18 +222,19 @@ def gen_plan():
         # Step 5: NL plans (or load cache)
         # -----------------------------
         print("Step 5: Generating natural language test plans...")
-        if step in (0, 5):
-            nl_plans = generate_nl_plans(
-                spec_text,
-                kg_json,
-                llm_agent,
-                valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
-                rtl_knowledge,
-                context_summarizer,  # Pass the context_summarizer
-            )
+        if FLAGS.generate_nlp:
+          if step in (0, 5):
+              nl_plans = generate_nl_plans(
+                  spec_text,
+                  kg_json,
+                  llm_agent,
+                  valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
+                  rtl_knowledge,
+                  context_summarizer,  # Pass the context_summarizer
+              )
 
-            # Caching Step 5 output
-            _save_json(objdir / "step5_nl_plans.json", nl_plans)
+              # Caching Step 5 output
+              _save_json(objdir / "step5_nl_plans.json", nl_plans)
         else:
             nl_plans = _load_json(objdir / "step5_nl_plans.json")
             print("Loaded NL plans from cache.")
