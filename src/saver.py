@@ -36,6 +36,7 @@ import json
 from collections import OrderedDict, defaultdict
 from pprint import pprint
 from os.path import join, dirname, basename
+from pathlib import Path
 import torch
 import networkx as nx
 import numpy as np
@@ -384,5 +385,26 @@ class NoOpContextManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
 
+def _save_json(path: Path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+def _load_json(path: Path, default=None):
+    if not path.exists():
+        if default is not None:
+            return default
+        raise FileNotFoundError(f"Missing cached artifact: {path}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+def _save_text(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+def _load_text(path: Path, default=None):
+    if not path.exists():
+        if default is not None:
+            return default
+        raise FileNotFoundError(f"Missing cached artifact: {path}")
+    return path.read_text(encoding="utf-8")
 
 saver = Saver()  # can be used by `from saver import saver`
