@@ -80,7 +80,13 @@ vector_store:
     overwrite: True
 
 ### Workflow settings ###
-
+workflows:
+  - "load_input_documents"  
+  - "create_base_text_units"
+  - "create_final_documents"
+  - "extract_graph"  
+  - "finalize_graph" 
+  
 embed_text:
   model_id: default_embedding_model
   vector_store_id: default_vector_store
