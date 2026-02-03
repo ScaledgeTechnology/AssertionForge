@@ -12,8 +12,9 @@ from utils import OurTimer
 from utils_LLM import llm_inference
 import time
 import re
-from saver import saver
+from saver import saver, _save_text, _save_json, _load_text, _load_json 
 from utils import OurTimer
+from pathlib import Path
 
 # Use saver's logging mechanism
 print = saver.log_info
@@ -36,7 +37,7 @@ class DesignContextSummarizer:
         self.summary_cache = {}  # Cache for summaries
         self.global_summary = None  # Cache for global design summary
         self.all_signals_summary = None  # Cache for comprehensive signals summary
-
+        self.objdir = Path(saver.get_obj_dir())
         
     @staticmethod
     def _worker_design_summary(spec_text, llm_agent):
@@ -76,13 +77,14 @@ class DesignContextSummarizer:
         return result
 
     def _has_cached_global_part(self, name: str) -> bool:
-        return False  # to be implemented later
+        path = self.objdir / f"{name}.json"
+        return path.exists()  # to be implemented later
 
     def _load_cached_global_part(self, name: str):
-        raise NotImplementedError
+        return _load_json(self.objdir / f"{name}.json")
     
     def _store_cached_global_part(self, name: str, value):
-        pass
+        _save_json(self.objdir / f"{name}.json", value)
 
     def generate_parallel_global_summary(
         self, spec_text: str, rtl_text: str, valid_signals: List[str], timer
