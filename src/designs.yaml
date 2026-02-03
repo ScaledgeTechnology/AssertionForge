@@ -3,11 +3,11 @@ design_name: uart
 
 llm:
   engine_type: "<llm_engine_type>"
-  model: "arcee-ai/trinity-mini"
+  model: "google/gemini-2.5-flash-lite"
   args:
     base_url: "https://openrouter.ai/api/v1"
     api_key: ""
-  max_tokens_per_prompt: 8000
+  max_tokens_per_prompt: 20000
 
 gen_plan:
   subtask: "actual_gen"
@@ -30,7 +30,8 @@ gen_plan:
   sva_out_dir: "/content/svas"
   gen_plan_sva_using_valid_signals: true
   valid_signals: []
-  generate_SVAs: true
+  generate_SVAs: false
+  generate_nlp: false
   load_dir: null
 
   dynamic_prompt_settings:
@@ -101,9 +102,9 @@ use_KG:
   query: "What does PREADY mean?"
 
 designs:
-  uart:
+  lsu:
     file_path: 
-      - "/content/AssertLLM/spec/uart.pdf"
-    design_dir: "/content/AssertLLM/rtl/uart"
-    KG_path: "/content/AssertLLM/spec/graph_rag_uart/output/graph.graphml"
+      - "/content/lsu"
+    design_dir: "/content/lsu_codes"
+    KG_path: "/content/lsu_graph.graphml"
 
