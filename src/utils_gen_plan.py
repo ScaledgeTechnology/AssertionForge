@@ -8,7 +8,7 @@
 
 from utils import get_ts
 from config import FLAGS
-from saver import saver
+from saver import saver, PipelineState
 from typing import Tuple, List
 from pathlib import Path
 from typing import Iterable, List, Union
@@ -524,3 +524,9 @@ def resolve_pdf_inputs(input_path: InputType) -> List[str]:
 
     return sorted(str(p) for p in paths)
 
+def should_run(step_name: str, FLAGS, state: PipelineState) -> bool:
+    if FLAGS.restart_step == step_name:
+        return True
+    if FLAGS.continue_run:
+        return not state.is_completed(step_name)
+    return True  # fresh run
