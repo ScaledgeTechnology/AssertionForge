@@ -34,7 +34,9 @@ from saver import (
     save_cached_nl_plans,
     _sva_cache_path,
     load_cached_svas,
-    save_cached_svas
+    save_cached_svas,
+    load_cached_signal_summary,
+    save_cached_signal_summary
 )
 from utils import OurTimer
 from utils_LLM import get_llm, llm_inference
@@ -193,56 +195,56 @@ def gen_plan():
         # -----------------------------
         # If you want this resumable too, you'd need to persist summaries per signal.
         if FLAGS.enable_context_enhancement:
-            if step in (0, 4.1)
-            print("Step 4b: Initializing Design Context Summarizer...")
+            if step in (0, 4.1):
+                print("Step 4b: Initializing Design Context Summarizer...")
 
-            # Initialize the context summarizer once
-            context_summarizer = DesignContextSummarizer(llm_agent=llm_agent)
+                # Initialize the context summarizer once
+                context_summarizer = DesignContextSummarizer(llm_agent=llm_agent)
 
-            # Extract RTL text from rtl_knowledge if available - simplified approach
-            rtl_text = (
-                rtl_knowledge['combined_content']
-                if rtl_knowledge is not None
-                and isinstance(rtl_knowledge, dict)
-                and 'combined_content' in rtl_knowledge
-                else ""
-            )
-
-            # Generate the global summary once
-            context_summarizer.generate_parallel_global_summary(
-                spec_text, rtl_text, list(valid_signals), timer
-            )
-
-            # Pre-generate summaries for all signals we'll process
-            signals_to_process = sorted(valid_signals)
-
-            if not math.isinf(FLAGS.max_num_signals_process):
-                signals_to_process = signals_to_process[: FLAGS.max_num_signals_process]
-
-            def process_signal(signal_name):
-                cached = load_cached_signal_summary(objdir, signal_name)
-                if cached is not None:
-                    return cached
-            
-                signal_rtl = (
-                    rtl_knowledge.get(signal_name, "")
-                    if isinstance(rtl_knowledge, dict)
+                # Extract RTL text from rtl_knowledge if available - simplified approach
+                rtl_text = (
+                    rtl_knowledge['combined_content']
+                    if rtl_knowledge is not None
+                    and isinstance(rtl_knowledge, dict)
+                    and 'combined_content' in rtl_knowledge
                     else ""
                 )
-            
-                summary = context_summarizer.get_signal_specific_summary(
-                    signal_name, spec_text, signal_rtl
+
+                # Generate the global summary once
+                context_summarizer.generate_parallel_global_summary(
+                    spec_text, rtl_text, list(valid_signals), timer
                 )
-            
-                save_cached_signal_summary(objdir, signal_name, summary)
-                return summary
+
+                # Pre-generate summaries for all signals we'll process
+                signals_to_process = sorted(valid_signals)
+
+                if not math.isinf(FLAGS.max_num_signals_process):
+                    signals_to_process = signals_to_process[: FLAGS.max_num_signals_process]
+
+                def process_signal(signal_name):
+                    cached = load_cached_signal_summary(objdir, signal_name)
+                    if cached is not None:
+                        return cached
                 
-            with ThreadPoolExecutor(max_workers=8) as executor:
-                futures = [
-                    executor.submit(process_signal, s)
-                    for s in signals_to_process
-                ]
-                results = [f.result() for f in as_completed(futures)]
+                    signal_rtl = (
+                        rtl_knowledge.get(signal_name, "")
+                        if isinstance(rtl_knowledge, dict)
+                        else ""
+                    )
+                
+                    summary = context_summarizer.get_signal_specific_summary(
+                        signal_name, spec_text, signal_rtl
+                    )
+                
+                    save_cached_signal_summary(objdir, signal_name, summary)
+                    return summary
+                    
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    futures = [
+                        executor.submit(process_signal, s)
+                        for s in signals_to_process
+                    ]
+                    results = [f.result() for f in as_completed(futures)]
             
             # for signal_name in signals_to_process:
             #     # Get signal-specific RTL if available
@@ -565,7 +567,7 @@ def generate_nl_plans(
         return generate_dynamic_nl_plans(
             spec_text, kg, llm_agent, valid_signals, rtl_knowledge, context_summarizer
         )
-    elif FLAGS.prompt_builder == 'dynamic_threaded'
+    elif FLAGS.prompt_builder == 'dynamic_threaded':
         return generate_dynamic_nl_plans_threaded(
             spec_text, kg, llm_agent, valid_signals, rtl_knowledge, context_summarizer
         )
