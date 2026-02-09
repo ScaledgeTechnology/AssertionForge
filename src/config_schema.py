@@ -191,8 +191,8 @@ class AppConfig:
             "prune_signals": self.gen_plan.prune_signals,
             "generate_SVAs": self.gen_plan.generate_SVAs,
             'generate_nlp' : self.gen_plan.generate_nlp,
-            "context_workers" : self.gen_plan.context_workers
-            "signal_workers" : self.gen_plan.signal_workers
+            "context_workers" : self.gen_plan.context_workers,
+            "signal_workers" : self.gen_plan.signal_workers,
             "load_dir": self.gen_plan.load_dir,
             # dynamic prompt internals → export as dict
             "dynamic_prompt_settings": asdict(self.gen_plan.dynamic_prompt_settings),
