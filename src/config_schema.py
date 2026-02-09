@@ -119,6 +119,8 @@ class GenPlanStage:
     prune_signals: bool = True
     generate_SVAs: bool = False
     generate_nlp: bool = False
+    context_workers: int = 4
+    signal_workers: int = 4
     load_dir: Optional[str] = None
     dynamic_prompt_settings: DynamicPromptSettings = field(default_factory=DynamicPromptSettings)
 
