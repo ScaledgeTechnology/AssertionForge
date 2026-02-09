@@ -7,7 +7,7 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 from typing import Dict, List, Optional, Any
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from utils import OurTimer
 from utils_LLM import llm_inference
@@ -89,20 +89,17 @@ class DesignContextSummarizer:
         _save_json(self.objdir / f"{name}.json", value)
 
     def generate_parallel_global_summary(
-        self, spec_text: str, rtl_text: str, valid_signals: List[str], timer
+        self,
+        spec_text: str,
+        rtl_text: str,
+        valid_signals: List[str],
+        timer,
     ) -> Dict[str, Any]:
         """
         Generate a comprehensive global summary of the design, including spec and RTL.
-        This should be called once and the results cached for future use.
-
-        Args:
-            spec_text: The design specification text
-            rtl_text: The RTL code
-            valid_signals: List of valid signal names
-
-        Returns:
-            Dictionary with various summary components
+        Threaded + cached + resume-safe.
         """
+    
         if self.global_summary is not None:
             return self.global_summary
     
@@ -144,9 +141,10 @@ class DesignContextSummarizer:
             )
     
         if tasks:
-            print(f"[GLOBAL] Spawning process pool for {len(tasks)} tasks")
+            max_workers = min(len(tasks), 4)  # 4 is a safe default
+            print(f"[GLOBAL] Running {len(tasks)} tasks with {max_workers} threads")
     
-            with ProcessPoolExecutor(max_workers=len(tasks)) as executor:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_map = {
                     executor.submit(fn, *args): name
                     for name, (fn, args) in tasks.items()
@@ -155,6 +153,8 @@ class DesignContextSummarizer:
                 for future in as_completed(future_map):
                     name = future_map[future]
                     value = future.result()
+    
+                    # Store results centrally (single thread)
                     results[name] = value
                     self._store_cached_global_part(name, value)
     
@@ -169,7 +169,7 @@ class DesignContextSummarizer:
         }
     
         print("[GLOBAL] Global design summary generated successfully")
-        timer.time_and_clear("Global summary (parallel)")
+        timer.time_and_clear("Global summary (threaded)")
     
         return self.global_summary
     
