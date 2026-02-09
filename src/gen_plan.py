@@ -219,13 +219,28 @@ def gen_plan():
                 signals_to_process = signals_to_process[: FLAGS.max_num_signals_process]
 
             def process_signal(signal_name):
-                signal_rtl = rtl_knowledge.get(signal_name, "") if isinstance(rtl_knowledge, dict) else ""
-                return context_summarizer.get_signal_specific_summary(
+                cached = load_cached_signal_summary(objdir, signal_name)
+                if cached is not None:
+                    return cached
+            
+                signal_rtl = (
+                    rtl_knowledge.get(signal_name, "")
+                    if isinstance(rtl_knowledge, dict)
+                    else ""
+                )
+            
+                summary = context_summarizer.get_signal_specific_summary(
                     signal_name, spec_text, signal_rtl
                 )
+            
+                save_cached_signal_summary(objdir, signal_name, summary)
+                return summary
                 
             with ThreadPoolExecutor(max_workers=8) as executor:
-                futures = [executor.submit(process_signal, s) for s in signals_to_process]
+                futures = [
+                    executor.submit(process_signal, s)
+                    for s in signals_to_process
+                ]
                 results = [f.result() for f in as_completed(futures)]
             
             # for signal_name in signals_to_process:
