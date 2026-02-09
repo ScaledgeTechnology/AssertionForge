@@ -15,11 +15,11 @@ import time
 import re
 from saver import saver, _save_text, _save_json, _load_text, _load_json 
 from utils import OurTimer
+from config import FLAGS
 from pathlib import Path
 
 # Use saver's logging mechanism
 print = saver.log_info
-
 
 class DesignContextSummarizer:
     """
@@ -27,7 +27,7 @@ class DesignContextSummarizer:
     to enhance SVA generation prompts.
     """
 
-    def __init__(self, llm_agent: str = "gpt-4"):
+    def __init__(self, llm_agent: str = "gpt-4", objdir):
         """
         Initialize with specified LLM agent.
 
@@ -38,7 +38,7 @@ class DesignContextSummarizer:
         self.summary_cache = {}  # Cache for summaries
         self.global_summary = None  # Cache for global design summary
         self.all_signals_summary = None  # Cache for comprehensive signals summary
-        self.objdir = Path(saver.get_obj_dir())
+        self.objdir = objdir
         self._summary_lock = Lock()
         
     @staticmethod
