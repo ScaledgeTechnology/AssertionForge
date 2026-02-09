@@ -36,6 +36,7 @@ import json
 from collections import OrderedDict, defaultdict
 from pprint import pprint
 from os.path import join, dirname, basename
+from typing import Optional, List
 from pathlib import Path
 import torch
 import networkx as nx
