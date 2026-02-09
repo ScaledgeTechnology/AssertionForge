@@ -27,7 +27,7 @@ class DesignContextSummarizer:
     to enhance SVA generation prompts.
     """
 
-    def __init__(self, llm_agent: str = "gpt-4", objdir):
+    def __init__(self, llm_agent: str = "gpt-4"):
         """
         Initialize with specified LLM agent.
 
@@ -38,7 +38,7 @@ class DesignContextSummarizer:
         self.summary_cache = {}  # Cache for summaries
         self.global_summary = None  # Cache for global design summary
         self.all_signals_summary = None  # Cache for comprehensive signals summary
-        self.objdir = objdir
+        self.objdir = Path(saver.get_obj_dir())
         self._summary_lock = Lock()
         
     @staticmethod
