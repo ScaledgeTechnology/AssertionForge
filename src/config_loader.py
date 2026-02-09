@@ -50,60 +50,56 @@ def load_app_config(
     return cfg
 
 def build_FLAGS_from_cli() -> Any:
+    def build_FLAGS_from_cli() -> Any:
     p = argparse.ArgumentParser()
+
+    # ---------------- core task ----------------
     p.add_argument("--task", choices=["gen_plan", "build_KG", "use_KG"], required=True)
     p.add_argument("--design_name", required=True)
     p.add_argument("--designs_yaml", default="designs.yaml")
     p.add_argument("--valid_signals", nargs="+", help="List of architectural signals")
 
-    # use_KG stage arguments
-    p.add_argument("--KG_root", help="Root path to GraphRAG KG output (optional, defaults to YAML)")
-    p.add_argument("--graphrag_method", help="GraphRAG method to use (optional, defaults to YAML)")
-    p.add_argument("--query", help="Query string for KG use stage (required for use_KG)")
+    # ---------------- KG ----------------
+    p.add_argument("--KG_root")
+    p.add_argument("--graphrag_method")
+    p.add_argument("--query")
 
-    # pipeline resume / checkpointing
-    p.add_argument(
-        "--step",
-        type=float,
-        default=0,
-        help="Pipeline step to run (0 = full pipeline, 1..6 = resume from step)"
-    )
+    # ---------------- NEW: pipeline control ----------------
+    p.add_argument("--continue", dest="continue_run", action="store_true",
+                   help="Resume pipeline from last incomplete step")
 
-    p.add_argument(
-        "--run_dir",
-        type=str,
-        default=None,
-        help="Fixed run directory to store logs and cached artifacts (enables resume)"
-    )
+    p.add_argument("--restart_step", type=str, default=None,
+                   help="Restart pipeline from this step (e.g. nl_plans, svas)")
+
+    p.add_argument("--pipeline_state_dir", type=str, default=".pipeline_state",
+                   help="Persistent pipeline cache/state directory")
+
+    p.add_argument("--run_dir", type=str, default=None,
+                   help="Run output directory (logs, artifacts only)")
+
     args, _ = p.parse_known_args()
 
-    # Load YAML config first
     cfg = load_app_config(designs_yaml=args.designs_yaml)
 
-    # Apply top-level CLI overrides
     cfg.task = args.task
     cfg.design_name = args.design_name
+
     if args.valid_signals:
         cfg.gen_plan.valid_signals = args.valid_signals
 
-    # Apply pipeline resume / checkpointing overrides (gen_plan stage)
-    cfg.gen_plan.step = args.step
+    # pipeline flags
+    cfg.gen_plan.continue_run = args.continue_run
+    cfg.gen_plan.restart_step = args.restart_step
+    cfg.gen_plan.pipeline_state_dir = args.pipeline_state_dir
     cfg.gen_plan.run_dir = args.run_dir
 
-
-    # Handle use_KG stage
     if args.task == "use_KG":
-        # query must always be provided
         if not args.query:
             p.error("--query is required when --task use_KG")
-
-        # only override YAML if CLI args are explicitly provided
+        cfg.use_KG.query = args.query
         if args.KG_root:
             cfg.use_KG.KG_root = args.KG_root
         if args.graphrag_method:
             cfg.use_KG.graphrag_method = args.graphrag_method
-
-        # query always comes from CLI
-        cfg.use_KG.query = args.query
 
     return cfg.to_FLAGS()
