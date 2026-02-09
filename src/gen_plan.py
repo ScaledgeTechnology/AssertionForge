@@ -235,7 +235,7 @@ def gen_plan():
         print("Step 5: Generating natural language test plans...")
         if FLAGS.generate_nlp:
           if step in (0, 5):
-              nl_plans = generate_nl_plans(
+              nl_plans = generate_nl_plans_threaded(
                   spec_text,
                   kg_json,
                   llm_agent,
@@ -581,12 +581,7 @@ def generate_dynamic_nl_plans(
         # Get dynamic contexts with enhancement integrated if enabled
         dynamic_context_list = prompt_builder.build_prompt(
             query=query,
-            base_prompt="""You are a senior hardware verification engineer.
-                        Using the information below, generate verification test ideas for the given signal.
-                        Focus on behavior, corner cases, protocol interactions, and failure scenarios.
-                        Do NOT write SystemVerilog code.
-                        Describe each test idea clearly and concisely.
-                        Relevant design context:""",
+            base_prompt="",
             signal_name=signal_name,
             enable_context_enhancement=FLAGS.enable_context_enhancement,  # Pass the enhancement flag
         )
@@ -659,7 +654,185 @@ def generate_dynamic_nl_plans(
 
     return nl_plans
 
+def _generate_plans_for_context(
+    *,
+    ctx: str,
+    idx: int,
+    signal_name: str,
+    valid_signals: Set[str],
+    llm_agent,
+) -> List[str]:
 
+    prompt = construct_static_nl_prompt(
+        ctx,
+        kg=None,  # KG already embedded in dynamic context
+        valid_signals=valid_signals,
+    )
+
+    prompt += (
+        f"\n\nGenerate diverse test plans for the signal '{signal_name}'. "
+        "Each test plan should be on a new line and start with 'Plan:'."
+    )
+
+    result = llm_inference(
+        llm_agent,
+        prompt,
+        f"NL_{signal_name}_{idx}",
+    )
+
+    plans = []
+    for line in result.splitlines():
+        if line.strip().startswith("Plan:"):
+            plans.append(line.split(":", 1)[-1].strip())
+
+    return plans
+
+def _process_signal(
+    *,
+    signal_name: str,
+    spec_text: str,
+    kg: Optional[Dict],
+    valid_signals: Set[str],
+    rtl_knowledge,
+    llm_agent,
+    context_summarizer,
+    context_generators,
+    objdir: Path,
+) -> tuple[str, List[str]]:
+
+    # ---- Cache check
+    cached = load_cached_nl_plans(objdir, signal_name)
+    if cached is not None:
+        print(f"[CACHE HIT] {signal_name}")
+        return signal_name, cached
+
+    print(f"[RUNNING] {signal_name}")
+
+    # ---- New builder per thread (important)
+    prompt_builder = DynamicPromptBuilder(
+        context_generators=context_generators,
+        pruning_config=FLAGS.dynamic_prompt_settings["pruning"],
+        llm_agent=llm_agent,
+        context_summarizer=context_summarizer,
+    )
+
+    base_prompt = ""
+
+    dynamic_contexts = prompt_builder.build_prompt(
+        query=signal_name,
+        base_prompt=base_prompt,
+        signal_name=signal_name,
+        enable_context_enhancement=FLAGS.enable_context_enhancement,
+    )
+
+    all_plans: List[str] = []
+
+    # Context-level threading
+    max_ctx_workers = min(
+        getattr(FLAGS, "context_workers", 4),
+        len(dynamic_contexts),
+    )
+
+    if max_ctx_workers <= 1:
+        # Serial fallback
+        for idx, ctx in enumerate(dynamic_contexts):
+            all_plans.extend(
+                _generate_plans_for_context(
+                    ctx=ctx,
+                    idx=idx,
+                    signal_name=signal_name,
+                    valid_signals=valid_signals,
+                    llm_agent=llm_agent,
+                )
+            )
+    else:
+        with ThreadPoolExecutor(max_workers=max_ctx_workers) as ex:
+            futures = [
+                ex.submit(
+                    _generate_plans_for_context,
+                    ctx=ctx,
+                    idx=idx,
+                    signal_name=signal_name,
+                    valid_signals=valid_signals,
+                    llm_agent=llm_agent,
+                )
+                for idx, ctx in enumerate(dynamic_contexts)
+            ]
+
+            for f in as_completed(futures):
+                all_plans.extend(f.result())
+
+    # Deduplicate (order-preserving)
+    seen = set()
+    unique_plans = []
+    for plan in all_plans:
+        key = " ".join(plan.lower().split())
+        if key not in seen:
+            seen.add(key)
+            unique_plans.append(plan)
+
+    save_cached_nl_plans(objdir, signal_name, unique_plans)
+    print(
+        f"[DONE] {signal_name}: {len(unique_plans)} unique plans "
+        f"(from {len(all_plans)} total)"
+    )
+
+    return signal_name, unique_plans
+
+def generate_dynamic_nl_plans_threaded(
+    spec_text: str,
+    kg: Optional[Dict],
+    llm_agent,
+    valid_signals: Optional[Set[str]],
+    rtl_knowledge,
+    context_summarizer,
+    objdir: Path,
+) -> Dict[str, List[str]]:
+    """
+    Generate natural language test plans using dynamic context synthesis.
+    Threaded, cached, and resumable.
+    """
+
+    assert valid_signals, "valid_signals must not be empty"
+
+    context_generators = create_context_generators(
+        spec_text,
+        kg,
+        valid_signals,
+        rtl_knowledge,
+    )
+
+    results: Dict[str, List[str]] = {}
+
+    signals = sorted(valid_signals)[: FLAGS.max_num_signals_process]
+    max_signal_workers = min(
+        getattr(FLAGS, "signal_workers", 4),
+        len(signals),
+    )
+
+    with ThreadPoolExecutor(max_workers=max_signal_workers) as ex:
+        futures = [
+            ex.submit(
+                _process_signal,
+                signal_name=signal,
+                spec_text=spec_text,
+                kg=kg,
+                valid_signals=valid_signals,
+                rtl_knowledge=rtl_knowledge,
+                llm_agent=llm_agent,
+                context_summarizer=context_summarizer,
+                context_generators=context_generators,
+                objdir=objdir,
+            )
+            for signal in signals
+        ]
+
+        for f in as_completed(futures):
+            signal_name, plans = f.result()
+            results[signal_name] = plans
+
+    return results
+    
 def generate_static_nl_plans(
     spec_text: str, kg: Optional[Dict], llm_agent, valid_signals: Optional[Set[str]]
 ) -> Dict[str, List[str]]:
