@@ -193,6 +193,7 @@ def gen_plan():
         # -----------------------------
         # If you want this resumable too, you'd need to persist summaries per signal.
         if FLAGS.enable_context_enhancement:
+            if step in (0, 4.1)
             print("Step 4b: Initializing Design Context Summarizer...")
 
             # Initialize the context summarizer once
