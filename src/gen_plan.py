@@ -581,7 +581,12 @@ def generate_dynamic_nl_plans(
         # Get dynamic contexts with enhancement integrated if enabled
         dynamic_context_list = prompt_builder.build_prompt(
             query=query,
-            base_prompt="Generate SystemVerilog Assertions based on the following information:",
+            base_prompt="""You are a senior hardware verification engineer.
+                        Using the information below, generate verification test ideas for the given signal.
+                        Focus on behavior, corner cases, protocol interactions, and failure scenarios.
+                        Do NOT write SystemVerilog code.
+                        Describe each test idea clearly and concisely.
+                        Relevant design context:""",
             signal_name=signal_name,
             enable_context_enhancement=FLAGS.enable_context_enhancement,  # Pass the enhancement flag
         )
