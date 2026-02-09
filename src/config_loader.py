@@ -64,7 +64,7 @@ def build_FLAGS_from_cli() -> Any:
     # pipeline resume / checkpointing
     p.add_argument(
         "--step",
-        type=int,
+        type=float,
         default=0,
         help="Pipeline step to run (0 = full pipeline, 1..6 = resume from step)"
     )
