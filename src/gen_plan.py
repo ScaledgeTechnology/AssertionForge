@@ -35,6 +35,7 @@ import networkx as nx
 from typing import Tuple, List, Dict, Optional, Set, Union
 from PyPDF2 import PdfReader
 from doxtract.processor import preprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import random
 import re
@@ -205,16 +206,26 @@ def gen_plan():
             if not math.isinf(FLAGS.max_num_signals_process):
                 signals_to_process = signals_to_process[: FLAGS.max_num_signals_process]
 
-            for signal_name in signals_to_process:
-                # Get signal-specific RTL if available
-                signal_rtl = (
-                    rtl_knowledge.get(signal_name, "")
-                    if isinstance(rtl_knowledge, dict)
-                    else ""
-                )
-                context_summarizer.get_signal_specific_summary(
+            def process_signal(signal_name):
+                signal_rtl = rtl_knowledge.get(signal_name, "") if isinstance(rtl_knowledge, dict) else ""
+                return context_summarizer.get_signal_specific_summary(
                     signal_name, spec_text, signal_rtl
                 )
+                
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(process_signal, s) for s in signals_to_process]
+                results = [f.result() for f in as_completed(futures)]
+            
+            # for signal_name in signals_to_process:
+            #     # Get signal-specific RTL if available
+            #     signal_rtl = (
+            #         rtl_knowledge.get(signal_name, "")
+            #         if isinstance(rtl_knowledge, dict)
+            #         else ""
+            #     )
+            #     context_summarizer.get_signal_specific_summary(
+            #         signal_name, spec_text, signal_rtl
+            #     )
 
             timer.time_and_clear("Initialize Context Summarizer")
 
