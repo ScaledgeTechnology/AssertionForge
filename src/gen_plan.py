@@ -16,7 +16,8 @@ from utils_gen_plan import (
     analyze_coverage_of_proven_svas,
     count_tokens_in_file,
     find_original_tcl_file,
-    resolve_pdf_inputs
+    resolve_pdf_inputs,
+    should_run
 )
 from rtl_kg import extract_rtl_knowledge
 from design_context_summarizer import DesignContextSummarizer
@@ -25,6 +26,7 @@ import subprocess
 from config import FLAGS
 from saver import (
     saver,
+    PipelineState,
     _save_json,
     _load_json,
     _save_text,
@@ -69,14 +71,14 @@ def gen_plan():
     """
     timer = OurTimer()
 
-    from pathlib import Path
-    import json
-
-    objdir = Path(saver.get_obj_dir())
-    step = int(getattr(FLAGS, "step", 0))  # 0 = run all
+    run_dir = Path(FLAGS.run_dir or f"runs/{FLAGS.design_name}")
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     # Initialize context_summarizer as None
     context_summarizer = None
+
+    # Caching pipeline intinilization
+    state = PipelineState(Path(FLAGS.pipeline_state_dir))
 
     if FLAGS.subtask == 'actual_gen':
         print("Starting the test plan generation process...")
@@ -87,21 +89,22 @@ def gen_plan():
         # Step 1: Read PDF (or load cache)
         # -----------------------------
         print("Step 1: Reading the PDF file(s)...")
-        if step in (0, 1):
-            # Use repo helper if available (your earlier version had this)
+
+        if should_run("read_spec", FLAGS, state):
+
             try:
                 file_path = resolve_pdf_inputs(FLAGS.file_path)
             except Exception:
                 file_path = FLAGS.file_path
 
-            spec_text, pdf_stats = read_pdf(file_path)
+            spec_text, pdf_stats = read_pdf(FLAGS.file_path)
 
-            # Caching Step 1 output
-            _save_text(objdir / "step1_spec_text.txt", spec_text)
-            _save_json(objdir / "step1_pdf_stats.json", pdf_stats)
+            _save_text(state.root / "spec/spec_text.txt", spec_text)
+            _save_json(state.root / "spec/pdf_stats.json", pdf_stats)
+
+            state.mark_completed("read_spec")
         else:
-            spec_text = _load_text(objdir / "step1_spec_text.txt")
-            pdf_stats = _load_json(objdir / "step1_pdf_stats.json")
+            spec_text = _load_text(state.root / "spec/spec_text.txt")
 
         timer.time_and_clear("Read PDF")
 
@@ -111,14 +114,15 @@ def gen_plan():
         kg_nx, kg_json, rtl_knowledge = None, None, None
 
         # NOTE: Step 2 depends on config flags; caching must respect them.
-        if step in (0, 2):
-            if FLAGS.use_KG:
-                print("Step 2: Loading and processing the Knowledge Graph...")
-                kg_nx, kg_json = load_and_process_kg(FLAGS.KG_path)
-                timer.time_and_clear("Load and process KG")
+        print("Step 2: Loading and processing the Knowledge Graph...")
 
+        if should_run("kg_rtl", FLAGS, state):
+            kg_json, rtl_knowledge = {}, {}
+        
+            if FLAGS.use_KG:
+                kg_nx, kg_json = load_and_process_kg(FLAGS.KG_path)
+        
                 if FLAGS.refine_with_rtl:
-                    print("Step 2b: Refining Knowledge Graph with RTL information...")
                     kg_nx, rtl_knowledge = refine_kg_from_rtl(kg_nx)
                     print(
                         f"Refined Knowledge Graph now has {len(kg_nx.nodes())} nodes and {len(kg_nx.edges())} edges"
@@ -126,29 +130,17 @@ def gen_plan():
                     # Update the JSON representation after refinement
                     kg_json = convert_nx_to_json(kg_nx)
                     timer.time_and_clear("Refine KG with RTL")
-                else:
-                    # Your earlier repository version had this; keep it to avoid rtl_knowledge staying None
-                    rtl_knowledge = extract_rtl_knowledge(
-                        FLAGS.design_dir, output_dir=None, verbose=True
-                    )
             else:
-                # If no KG, you might still want RTL knowledge depending on downstream flags.
+              # If no KG, you might still want RTL knowledge depending on downstream flags.
                 # Keep rtl_knowledge as None unless you want to always compute it.
-                rtl_knowledge = extract_rtl_knowledge(
-                        FLAGS.design_dir, output_dir=None, verbose=True
-                    )
+                rtl_knowledge = extract_rtl_knowledge(FLAGS.design_dir, output_dir=None, verbose=True)
 
-            # Caching Step 2 outputs
-            _save_json(objdir / "step2_kg.json", kg_json if kg_json is not None else {})
-            _save_json(
-                objdir / "step2_rtl_knowledge.json",
-                rtl_knowledge if rtl_knowledge is not None else {},
-            )
+            _save_json(state.root / "kg/kg.json", kg_json)
+            _save_json(state.root / "kg/rtl_knowledge.json", rtl_knowledge)
+            state.mark_completed("kg_rtl")
         else:
-            kg_json = _load_json(objdir / "step2_kg.json", default={})
-            rtl_knowledge = _load_json(objdir / "step2_rtl_knowledge.json", default={})
-            # kg_nx isn't required for later steps; keep it None
-            kg_nx = None
+            kg_json = _load_json(state.root / "kg/kg.json")
+            rtl_knowledge = _load_json(state.root / "kg/rtl_knowledge.json")
 
         # -----------------------------
         # Step 3: LLM init (cannot "cache" model object, but we can skip earlier steps)
@@ -161,7 +153,7 @@ def gen_plan():
         # Step 4: Extract valid signals (or load cache)
         # -----------------------------
         print("Step 4: Extracting valid signal names...")
-        if step in (0, 4):
+        if should_run("valid_signals", FLAGS, state):
             if not FLAGS.valid_signals:
                 _, valid_signals, signal_hierarchy = write_svas_to_file(
                     []
@@ -178,14 +170,13 @@ def gen_plan():
                     )
                 else:
                     print(f"Valid signal names: {', '.join(sorted(valid_signals))}")
+                _save_json(state.root / "valid_signals.json", sorted(valid_signals))
+                state.mark_completed("valid_signals")
             else:
                 valid_signals = FLAGS.valid_signals
                 print(f"Valid signal names: {', '.join(sorted(valid_signals))}")
-
-            # Caching Step 4 outputs
-            _save_json(objdir / "step4_valid_signals.json", sorted(list(valid_signals)))
         else:
-            valid_signals = set(_load_json(objdir / "step4_valid_signals.json"))
+            valid_signals = set(_load_json(state.root / "valid_signals.json"))
             print(f"Valid signal names (loaded): {', '.join(sorted(valid_signals))}")
 
         timer.time_and_clear("Extract valid signals")
@@ -195,11 +186,9 @@ def gen_plan():
         # -----------------------------
         # If you want this resumable too, you'd need to persist summaries per signal.
         if FLAGS.enable_context_enhancement:
-            if step in (0, 4.1):
-                print("Step 4b: Initializing Design Context Summarizer...")
-
-                # Initialize the context summarizer once
-                context_summarizer = DesignContextSummarizer(llm_agent=llm_agent)
+            print("Step 4b: Initializing Design Context Summarizer...")
+            context_summarizer = DesignContextSummarizer(llm_agent=llm_agent)
+            if should_run("global_summary", FLAGS, state):
 
                 # Extract RTL text from rtl_knowledge if available - simplified approach
                 rtl_text = (
@@ -214,7 +203,9 @@ def gen_plan():
                 context_summarizer.generate_parallel_global_summary(
                     spec_text, rtl_text, list(valid_signals), timer
                 )
+                state.mark_completed("global_summary")
 
+            if should_run("signal_summaries", FLAGS, state):
                 # Pre-generate summaries for all signals we'll process
                 signals_to_process = sorted(valid_signals)
 
@@ -222,7 +213,7 @@ def gen_plan():
                     signals_to_process = signals_to_process[: FLAGS.max_num_signals_process]
 
                 def process_signal(signal_name):
-                    cached = load_cached_signal_summary(objdir, signal_name)
+                    cached = load_cached_signal_summary(state.root, signal_name)
                     if cached is not None:
                         return cached
                 
@@ -236,7 +227,7 @@ def gen_plan():
                         signal_name, spec_text, signal_rtl
                     )
                 
-                    save_cached_signal_summary(objdir, signal_name, summary)
+                    save_cached_signal_summary(state.root, signal_name, summary)
                     return summary
                     
                 with ThreadPoolExecutor(max_workers=8) as executor:
@@ -245,7 +236,7 @@ def gen_plan():
                         for s in signals_to_process
                     ]
                     results = [f.result() for f in as_completed(futures)]
-            
+                state.mark_completed("signal_summaries")
             # for signal_name in signals_to_process:
             #     # Get signal-specific RTL if available
             #     signal_rtl = (
@@ -258,27 +249,30 @@ def gen_plan():
             #     )
 
             timer.time_and_clear("Initialize Context Summarizer")
-
+        else:
+            context_summarizer = DesignContextSummarizer(llm_agent=llm_agent)
         # -----------------------------
         # Step 5: NL plans (or load cache)
         # -----------------------------
         print("Step 5: Generating natural language test plans...")
         if FLAGS.generate_nlp:
-          if step in (0, 5):
-              nl_plans = generate_nl_plans(
-                  spec_text,
-                  kg_json,
-                  llm_agent,
-                  valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
-                  rtl_knowledge,
-                  context_summarizer,  # Pass the context_summarizer
-              )
+            if should_run("nl_plans", FLAGS, state):
+                nl_plans = generate_nl_plans(
+                    spec_text,
+                    kg_json,
+                    llm_agent,
+                    valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
+                    rtl_knowledge,
+                    context_summarizer,  # Pass the context_summarizer
+                    state.root,
+                )
 
-              # Caching Step 5 output
-              _save_json(objdir / "step5_nl_plans.json", nl_plans)
-        else:
-            nl_plans = _load_json(objdir / "step5_nl_plans.json")
-            print("Loaded NL plans from cache.")
+                # Caching Step 5 output
+                state.mark_completed("nl_plans")
+                _save_json(state.root / "step5_nl_plans.json", nl_plans)
+            else:
+                nl_plans = _load_json(state.root / "step5_nl_plans.json")
+                print("Loaded NL plans from cache.")
 
         # Keep your existing nl_plans.txt write (do not remove)
         with open(
@@ -302,7 +296,7 @@ def gen_plan():
         # -----------------------------
         if FLAGS.generate_SVAs:
             print("Step 6: Generating SVAs...")
-            if step in (0, 6):
+            if should_run("svas", FLAGS, state):
                 svas = generate_svas(
                     spec_text,
                     nl_plans,
@@ -311,12 +305,14 @@ def gen_plan():
                     valid_signals if FLAGS.gen_plan_sva_using_valid_signals else None,
                     rtl_knowledge,
                     context_summarizer,  # Pass the context_summarizer
+                    state.root,
                 )
 
                 # Caching Step 6 output
-                _save_json(objdir / "step6_svas.json", svas)
+                state.mark_completed("svas")
+                _save_json(state.root / "step6_svas.json", svas)
             else:
-                svas = _load_json(objdir / "step6_svas.json", default=[])
+                svas = _load_json(state.root / "step6_svas.json", default=[])
                 print("Loaded SVAs from cache.")
 
             if len(svas) == 0:
@@ -549,6 +545,7 @@ def generate_nl_plans(
     valid_signals: Optional[Set[str]],
     rtl_knowledge,
     context_summarizer,
+    objdir,
 ) -> Dict[str, List[str]]:
     """
     Generate natural language test plans using the design specification,
@@ -569,7 +566,7 @@ def generate_nl_plans(
         )
     elif FLAGS.prompt_builder == 'dynamic_threaded':
         return generate_dynamic_nl_plans_threaded(
-            spec_text, kg, llm_agent, valid_signals, rtl_knowledge, context_summarizer
+            spec_text, kg, llm_agent, valid_signals, rtl_knowledge, context_summarizer, objdir
         )
     elif FLAGS.prompt_builder == 'static':
         return generate_static_nl_plans(spec_text, kg, llm_agent, valid_signals)
@@ -735,10 +732,11 @@ def _process_signal_nlp(
 ) -> tuple[str, List[str]]:
 
     # ---- Cache check
-    cached = load_cached_nl_plans(objdir, signal_name)
-    if cached is not None:
-        print(f"[CACHE HIT] {signal_name}")
-        return signal_name, cached
+    if not FLAGS.restart_step
+        cached = load_cached_nl_plans(objdir, signal_name)
+        if cached is not None:
+            print(f"[CACHE HIT] {signal_name}")
+            return signal_name, cached
 
     print(f"[RUNNING] {signal_name}")
 
@@ -891,6 +889,7 @@ def generate_svas(
     valid_signals: Optional[Set[str]],
     rtl_knowledge,
     context_summarizer,
+    objdir
 ) -> List[str]:
     """
     Generate SVAs using LLM based on the design specification, natural language test plans,
@@ -925,6 +924,7 @@ def generate_svas(
             valid_signals,
             rtl_knowledge,
             context_summarizer,
+            objdir
         )
     elif FLAGS.prompt_builder == 'static':
         return generate_static_svas(spec_text, nl_plans, kg, llm_agent, valid_signals)
@@ -1138,10 +1138,11 @@ def _process_signal_svas(
 ) -> List[str]:
 
     # ---- Cache check
-    cached = load_cached_svas(objdir, signal_name)
-    if cached is not None:
-        print(f"[SVA CACHE HIT] {signal_name}")
-        return cached
+    if not FLAGS.restart_step:
+        cached = load_cached_svas(objdir, signal_name)
+        if cached is not None:
+            print(f"[SVA CACHE HIT] {signal_name}")
+            return cached
 
     print(f"[SVA RUNNING] {signal_name}")
 
