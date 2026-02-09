@@ -367,6 +367,11 @@ class DesignContextSummarizer:
         signal_description = self._call_llm(prompt, f"signal_desc_{signal_name}")
 
         # Cache the result
+        signal_summary = {
+            "description": signal_description,
+            "generation_time": time.time(),
+        }
+
         # Lock only for cache write
         with self._summary_lock:
             # Double-check in case another thread filled it
