@@ -8,6 +8,7 @@
 
 from typing import Dict, List, Optional, Any
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from threading import Lock
 from utils import OurTimer
 from utils_LLM import llm_inference
 import time
@@ -38,6 +39,7 @@ class DesignContextSummarizer:
         self.global_summary = None  # Cache for global design summary
         self.all_signals_summary = None  # Cache for comprehensive signals summary
         self.objdir = Path(saver.get_obj_dir())
+        self._summary_lock = Lock()
         
     @staticmethod
     def _worker_design_summary(spec_text, llm_agent):
@@ -365,13 +367,12 @@ class DesignContextSummarizer:
         signal_description = self._call_llm(prompt, f"signal_desc_{signal_name}")
 
         # Cache the result
-        signal_summary = {
-            "description": signal_description,
-            "generation_time": time.time(),
-        }
-
-        self.summary_cache[cache_key] = signal_summary
-        return signal_summary
+        # Lock only for cache write
+        with self._summary_lock:
+            # Double-check in case another thread filled it
+            if cache_key not in self.summary_cache:
+                self.summary_cache[cache_key] = signal_summary
+            return self.summary_cache[cache_key]
 
     def add_enhanced_context(
         self, dynamic_context: str, target_signal_name: str
