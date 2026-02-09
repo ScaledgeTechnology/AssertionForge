@@ -32,6 +32,8 @@ gen_plan:
   valid_signals: []
   generate_SVAs: false
   generate_nlp: false
+  context_workers: 4
+  signal_workers: 4
   load_dir: null
 
   dynamic_prompt_settings:
