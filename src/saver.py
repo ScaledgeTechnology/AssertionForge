@@ -407,4 +407,29 @@ def _load_text(path: Path, default=None):
         raise FileNotFoundError(f"Missing cached artifact: {path}")
     return path.read_text(encoding="utf-8")
 
+def _nl_plan_cache_path(objdir: Path, signal_name: str) -> Path:
+    return objdir / "nl_plans" / f"{signal_name}.json"
+
+
+def load_cached_nl_plans(objdir: Path, signal_name: str) -> Optional[List[str]]:
+    path = _nl_plan_cache_path(objdir, signal_name)
+    if path.exists():
+        with open(path, "r") as f:
+            return json.load(f).get("plans")
+    return None
+
+
+def save_cached_nl_plans(objdir: Path, signal_name: str, plans: List[str]) -> None:
+    outdir = objdir / "nl_plans"
+    outdir.mkdir(parents=True, exist_ok=True)
+    with open(_nl_plan_cache_path(objdir, signal_name), "w") as f:
+        json.dump(
+            {
+                "signal": signal_name,
+                "plans": plans,
+            },
+            f,
+            indent=2,
+        )
+
 saver = Saver()  # can be used by `from saver import saver`
