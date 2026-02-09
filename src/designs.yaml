@@ -12,14 +12,14 @@ llm:
 gen_plan:
   subtask: "actual_gen"
   DEBUG: false
-  prompt_builder: "dynamic"
+  prompt_builder: "dynamic_threaded"
   enable_context_enhancement: true
   max_num_signals_process: inf      # Maximum number of signals to process (inf = no limit)
-  max_prompts_per_signal: 3         # Maximum number of prompts per signal
+  max_prompts_per_signal: 5         # Maximum number of prompts per signal
   doc_retriever: true
-  chunk_size: 100                   # Default doc retriever chunk size
+  chunk_size: 200                   # Default doc retriever chunk size
   overlap: 20                       # Overlap size for chunks
-  doc_k: 3                          # Number of document chunks to retrieve
+  doc_k: 5                          # Number of document chunks to retrieve
   kg_retriever: true                # Enable/disable KG retriever
   use_KG: true                      # Use KG in retrieval
   refine_with_rtl: true             # Refine retrieval with RTL signals
@@ -71,7 +71,7 @@ gen_plan:
       min_subgraph_size: 5            # Minimum useful subgraph size
     
     guided_random_walk:
-      enabled: false
+      enabled: true
       num_walks: 70                   # Number of random walks per focus node
       walk_budget: 100                # Maximum steps per random walk
       teleport_probability: 0.1       # Probability of teleporting to a gateway node
@@ -88,8 +88,8 @@ gen_plan:
       max_total_contexts: 100         # Maximum contexts overall
       min_similarity_threshold: 0.3   # Fallback: minimum similarity threshold
 
-    kg_k: 3
-    traversal_max_depth: 1
+    kg_k: 5
+    traversal_max_depth: 2
     retrieve_edge: true
 
 build_KG:
