@@ -431,5 +431,29 @@ def save_cached_nl_plans(objdir: Path, signal_name: str, plans: List[str]) -> No
             f,
             indent=2,
         )
+def _sva_cache_path(objdir: Path, signal_name: str) -> Path:
+    return objdir / "svas" / f"{signal_name}.json"
 
+
+def load_cached_svas(objdir: Path, signal_name: str) -> Optional[List[str]]:
+    path = _sva_cache_path(objdir, signal_name)
+    if path.exists():
+        with open(path, "r") as f:
+            return json.load(f).get("svas")
+    return None
+
+
+def save_cached_svas(objdir: Path, signal_name: str, svas: List[str]) -> None:
+    outdir = objdir / "svas"
+    outdir.mkdir(parents=True, exist_ok=True)
+    with open(_sva_cache_path(objdir, signal_name), "w") as f:
+        json.dump(
+            {
+                "signal": signal_name,
+                "svas": svas,
+            },
+            f,
+            indent=2,
+        )
+        
 saver = Saver()  # can be used by `from saver import saver`
