@@ -407,6 +407,22 @@ def _load_text(path: Path, default=None):
         raise FileNotFoundError(f"Missing cached artifact: {path}")
     return path.read_text(encoding="utf-8")
 
+def _signal_summary_path(objdir, signal_name):
+    return objdir / "signal_summaries" / f"{signal_name}.json"
+
+
+def load_cached_signal_summary(objdir, signal_name):
+    path = _signal_summary_path(objdir, signal_name)
+    if path.exists():
+        return _load_json(path)
+    return None
+
+
+def save_cached_signal_summary(objdir, signal_name, summary):
+    outdir = objdir / "signal_summaries"
+    outdir.mkdir(parents=True, exist_ok=True)
+    _save_json(outdir / f"{signal_name}.json", summary)
+    
 def _nl_plan_cache_path(objdir: Path, signal_name: str) -> Path:
     return objdir / "nl_plans" / f"{signal_name}.json"
 
