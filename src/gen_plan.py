@@ -23,7 +23,19 @@ from design_context_summarizer import DesignContextSummarizer
 import os, math
 import subprocess
 from config import FLAGS
-from saver import saver, _save_text, _save_json, _load_text, _load_json
+from saver import (
+    saver,
+    _save_json,
+    _load_json,
+    _save_text,
+    _load_text,
+    _nl_plan_cache_path,
+    load_cached_nl_plans,
+    save_cached_nl_plans,
+    _sva_cache_path,
+    load_cached_svas,
+    save_cached_svas
+)
 from utils import OurTimer
 from utils_LLM import get_llm, llm_inference
 from pyverilog.vparser.parser import parse
@@ -235,7 +247,7 @@ def gen_plan():
         print("Step 5: Generating natural language test plans...")
         if FLAGS.generate_nlp:
           if step in (0, 5):
-              nl_plans = generate_nl_plans_threaded(
+              nl_plans = generate_nl_plans(
                   spec_text,
                   kg_json,
                   llm_agent,
@@ -537,6 +549,10 @@ def generate_nl_plans(
         return generate_dynamic_nl_plans(
             spec_text, kg, llm_agent, valid_signals, rtl_knowledge, context_summarizer
         )
+    elif FLAGS.prompt_builder == 'dynamic_threaded'
+        return generate_dynamic_nl_plans_threaded(
+            spec_text, kg, llm_agent, valid_signals, rtl_knowledge, context_summarizer
+        )
     elif FLAGS.prompt_builder == 'static':
         return generate_static_nl_plans(spec_text, kg, llm_agent, valid_signals)
     else:
@@ -687,7 +703,7 @@ def _generate_plans_for_context(
 
     return plans
 
-def _process_signal(
+def _process_signal_nlp(
     *,
     signal_name: str,
     spec_text: str,
@@ -813,7 +829,7 @@ def generate_dynamic_nl_plans_threaded(
     with ThreadPoolExecutor(max_workers=max_signal_workers) as ex:
         futures = [
             ex.submit(
-                _process_signal,
+                _process_signal_nlp,
                 signal_name=signal,
                 spec_text=spec_text,
                 kg=kg,
@@ -874,6 +890,16 @@ def generate_svas(
     """
     if FLAGS.prompt_builder == 'dynamic':
         return generate_dynamic_svas(
+            spec_text,
+            nl_plans,
+            kg,
+            llm_agent,
+            valid_signals,
+            rtl_knowledge,
+            context_summarizer,
+        )
+    if FLAGS.prompt_builder == 'dynamic_threaded':
+        return generate_dynamic_svas_threaded(
             spec_text,
             nl_plans,
             kg,
@@ -1037,6 +1063,200 @@ def generate_dynamic_svas(
 
     return all_svas
 
+def _generate_svas_for_context(
+    *,
+    dynamic_context: str,
+    context_idx: int,
+    signal_name: str,
+    plans: List[str],
+    distribute_plans: bool,
+    plans_per_context: Optional[List[List[tuple[int, str]]]],
+    sva_examples: str,
+    llm_agent,
+) -> List[str]:
+
+    if distribute_plans:
+        context_plans = plans_per_context[context_idx]
+        if not context_plans:
+            return []
+
+        plans_text = "\n".join(
+            f"Plan {j+1}: {plan}" for j, plan in context_plans
+        )
+    else:
+        plans_text = "\n".join(
+            f"Plan {j+1}: {plan}" for j, plan in enumerate(plans)
+        )
+
+    full_prompt = (
+        f"{dynamic_context}\n\n"
+        f"Natural Language Test Plans for signal '{signal_name}':\n"
+        f"{plans_text}\n\n"
+        f"{sva_examples}\n\n"
+        "Generate one SystemVerilog Assertion (SVA) for each test plan.\n"
+        "Enclose each SVA in triple backticks (```) and prefix it with 'SVA:'."
+    )
+
+    result = llm_inference(
+        llm_agent,
+        full_prompt,
+        f"SVAs_{signal_name}_{context_idx}",
+    )
+
+    return extract_svas_from_block(result)
+
+def _process_signal_svas(
+    *,
+    signal_name: str,
+    plans: List[str],
+    spec_text: str,
+    kg: Optional[Dict],
+    valid_signals: Set[str],
+    rtl_knowledge,
+    llm_agent,
+    context_summarizer,
+    context_generators,
+    objdir: Path,
+) -> List[str]:
+
+    # ---- Cache check
+    cached = load_cached_svas(objdir, signal_name)
+    if cached is not None:
+        print(f"[SVA CACHE HIT] {signal_name}")
+        return cached
+
+    print(f"[SVA RUNNING] {signal_name}")
+
+    if not plans:
+        print(f"No NL plans for signal {signal_name}, skipping")
+        return []
+
+    prompt_builder = DynamicPromptBuilder(
+        context_generators=context_generators,
+        pruning_config=FLAGS.dynamic_prompt_settings["pruning"],
+        llm_agent=llm_agent,
+        context_summarizer=context_summarizer,
+    )
+
+    dynamic_contexts = prompt_builder.build_prompt(
+        query=signal_name,
+        base_prompt="Generate SystemVerilog Assertions based on the following information:",
+        signal_name=signal_name,
+        enable_context_enhancement=FLAGS.enable_context_enhancement,
+    )
+
+    sva_examples = get_sva_icl_examples()
+
+    distribute_plans = len(plans) > 10 and len(dynamic_contexts) > 1
+
+    plans_per_context = None
+    if distribute_plans:
+        plans_per_context = [[] for _ in range(len(dynamic_contexts))]
+        for j, plan in enumerate(plans):
+            plans_per_context[j % len(dynamic_contexts)].append((j, plan))
+
+    signal_svas: List[str] = []
+
+    max_ctx_workers = min(
+        getattr(FLAGS, "context_workers", 4),
+        len(dynamic_contexts),
+    )
+
+    with ThreadPoolExecutor(max_workers=max_ctx_workers) as ex:
+        futures = [
+            ex.submit(
+                _generate_svas_for_context,
+                dynamic_context=ctx,
+                context_idx=idx,
+                signal_name=signal_name,
+                plans=plans,
+                distribute_plans=distribute_plans,
+                plans_per_context=plans_per_context,
+                sva_examples=sva_examples,
+                llm_agent=llm_agent,
+            )
+            for idx, ctx in enumerate(dynamic_contexts)
+        ]
+
+        for f in as_completed(futures):
+            signal_svas.extend(f.result())
+
+    # ---- Deduplicate SVAs (order-preserving)
+    seen = set()
+    unique_svas = []
+    for sva in signal_svas:
+        simplified = " ".join(
+            line
+            for line in sva.lower().splitlines()
+            if not line.strip().startswith("//")
+        ).strip()
+
+        if simplified not in seen:
+            seen.add(simplified)
+            unique_svas.append(sva)
+
+    save_cached_svas(objdir, signal_name, unique_svas)
+
+    print(
+        f"[SVA DONE] {signal_name}: {len(unique_svas)} unique SVAs "
+        f"(from {len(signal_svas)} total)"
+    )
+
+    return unique_svas
+
+def generate_dynamic_svas_threaded(
+    spec_text: str,
+    nl_plans: Dict[str, List[str]],
+    kg: Optional[Dict],
+    llm_agent,
+    valid_signals: Optional[Set[str]],
+    rtl_knowledge,
+    context_summarizer,
+    objdir: Path,
+) -> List[str]:
+    """
+    Generate SVAs using dynamic context synthesis.
+    Threaded, cached, and resumable.
+    """
+
+    context_generators = create_context_generators(
+        spec_text,
+        kg,
+        valid_signals,
+        rtl_knowledge,
+    )
+
+    all_svas: List[str] = []
+
+    signals = list(nl_plans.keys())[: FLAGS.max_num_signals_process]
+
+    max_signal_workers = min(
+        getattr(FLAGS, "signal_workers", 4),
+        len(signals),
+    )
+
+    with ThreadPoolExecutor(max_workers=max_signal_workers) as ex:
+        futures = {
+            ex.submit(
+                _process_signal_svas,
+                signal_name=signal,
+                plans=nl_plans[signal],
+                spec_text=spec_text,
+                kg=kg,
+                valid_signals=valid_signals,
+                rtl_knowledge=rtl_knowledge,
+                llm_agent=llm_agent,
+                context_summarizer=context_summarizer,
+                context_generators=context_generators,
+                objdir=objdir,
+            ): signal
+            for signal in signals
+        }
+
+        for f in as_completed(futures):
+            all_svas.extend(f.result())
+
+    return all_svas
 
 def generate_static_svas(
     spec_text: str,
